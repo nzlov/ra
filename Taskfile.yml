@@ -353,10 +353,10 @@ tasks:
       - "appicon.png"
     generates:
       - "icons.icns"
-      - "icons.ico"
+      - "icon.ico"
     cmds:
       # Generates both .ico and .icns files
-      - wails3 generate icons -input appicon.png
+      - wails3 generate icons -input appicon.png -windowsfilename icon.ico -macfilename icons.icns
 
   install:frontend:deps:
     summary: Install frontend dependencies

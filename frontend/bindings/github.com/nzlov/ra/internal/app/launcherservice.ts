@@ -3,7 +3,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import {Call as $Call, Create as $Create} from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -13,46 +13,34 @@ import * as desktop$0 from "../desktop/models.js";
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
-export function Invoke(action: $models.Action): Promise<$models.InvokeResult> & { cancel(): void } {
-    let $resultPromise = $Call.ByID(2371333820, action) as any;
-    let $typingPromise = $resultPromise.then(($result) => {
+export function Invoke(action: $models.Action): $CancellablePromise<$models.InvokeResult> {
+    return $Call.ByID(2371333820, action).then(($result: any) => {
         return $$createType0($result);
-    }) as any;
-    $typingPromise.cancel = $resultPromise.cancel.bind($resultPromise);
-    return $typingPromise;
+    });
 }
 
-export function Refresh(): Promise<void> & { cancel(): void } {
-    let $resultPromise = $Call.ByID(4023310423) as any;
-    return $resultPromise;
+export function Refresh(): $CancellablePromise<void> {
+    return $Call.ByID(4023310423);
 }
 
-export function RefreshPlugins(): Promise<void> & { cancel(): void } {
-    let $resultPromise = $Call.ByID(1097962029) as any;
-    return $resultPromise;
+export function RefreshPlugins(): $CancellablePromise<void> {
+    return $Call.ByID(1097962029);
 }
 
-export function Search(query: string): Promise<$models.Result[]> & { cancel(): void } {
-    let $resultPromise = $Call.ByID(611293392, query) as any;
-    let $typingPromise = $resultPromise.then(($result) => {
+export function Search(query: string): $CancellablePromise<$models.Result[]> {
+    return $Call.ByID(611293392, query).then(($result: any) => {
         return $$createType2($result);
-    }) as any;
-    $typingPromise.cancel = $resultPromise.cancel.bind($resultPromise);
-    return $typingPromise;
+    });
 }
 
-export function SetDesktopEntries(entries: desktop$0.Entry[]): Promise<void> & { cancel(): void } {
-    let $resultPromise = $Call.ByID(1609435692, entries) as any;
-    return $resultPromise;
+export function SetDesktopEntries(entries: desktop$0.Entry[]): $CancellablePromise<void> {
+    return $Call.ByID(1609435692, entries);
 }
 
-export function Status(): Promise<$models.Status> & { cancel(): void } {
-    let $resultPromise = $Call.ByID(520844438) as any;
-    let $typingPromise = $resultPromise.then(($result) => {
+export function Status(): $CancellablePromise<$models.Status> {
+    return $Call.ByID(520844438).then(($result: any) => {
         return $$createType3($result);
-    }) as any;
-    $typingPromise.cancel = $resultPromise.cancel.bind($resultPromise);
-    return $typingPromise;
+    });
 }
 
 // Private type creation functions

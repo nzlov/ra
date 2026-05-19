@@ -16,10 +16,12 @@ RA is a Linux-first launcher prototype built with Go and Wails v3. It aims for a
 
 ## Requirements
 
-- Go 1.21+
-- Wails v3 alpha CLI: `wails3`
+- Go 1.25+
+- Wails v3 alpha CLI installed with `go install github.com/wailsapp/wails/v3/cmd/wails3@latest`
 - Node.js and npm
-- Linux desktop environment with WebKitGTK dependencies required by Wails
+- Linux desktop environment with GTK4/WebKitGTK 6.0 dependencies required by Wails
+
+On CachyOS/Arch, the relevant packages are `base-devel`, `gtk4`, and `webkitgtk-6.0`.
 
 ## Development
 
@@ -29,6 +31,7 @@ cd frontend
 npm install
 npm run build
 cd ..
+wails3 generate bindings -f '-gcflags=all="-l"' -ts
 wails3 dev
 ```
 

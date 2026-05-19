@@ -33,7 +33,7 @@ func main() {
 		},
 	})
 
-	wailsApp.NewWebviewWindowWithOptions(application.WebviewWindowOptions{
+	wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title: "RA",
 		Mac: application.MacWindow{
 			InvisibleTitleBarHeight: 50,
