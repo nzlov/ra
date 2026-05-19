@@ -1,25 +1,27 @@
 package builtinplugins
 
 import (
-	"embed"
-	"encoding/json"
+	"bytes"
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
-	"strings"
+	"runtime"
 
-	"github.com/nzlov/ra/internal/pluginbundle"
 	pluginregistry "github.com/nzlov/ra/internal/plugins"
 )
 
-//go:embed ra-app-launcher/** ra-calculator/** ra-plugin-manager/**
-var files embed.FS
-
 var builtinIDs = []string{"ra-app-launcher", "ra-calculator", "ra-plugin-manager"}
+var compiledBuiltinPlugins []pluginregistry.BuiltinPlugin
+var compiledBuiltinOK bool
 
 func List() []pluginregistry.BuiltinPlugin {
+	if compiledBuiltinOK {
+		return cloneBuiltins(compiledBuiltinPlugins)
+	}
 	items := make([]pluginregistry.BuiltinPlugin, 0, len(builtinIDs))
 	for _, id := range builtinIDs {
-		raw, err := build(id)
+		raw, err := buildFromSource(id)
 		name := id
 		if err != nil {
 			raw = nil
@@ -30,55 +32,44 @@ func List() []pluginregistry.BuiltinPlugin {
 	return items
 }
 
-func build(id string) ([]byte, error) {
-	var manifest pluginbundle.Manifest
-	if err := readJSON(filepath.ToSlash(filepath.Join(id, "manifest.json")), &manifest); err != nil {
-		return nil, err
+func cloneBuiltins(items []pluginregistry.BuiltinPlugin) []pluginregistry.BuiltinPlugin {
+	out := make([]pluginregistry.BuiltinPlugin, 0, len(items))
+	for _, item := range items {
+		out = append(out, pluginregistry.BuiltinPlugin{
+			Name: item.Name,
+			Raw:  append([]byte(nil), item.Raw...),
+		})
 	}
-	var capabilities []pluginbundle.Capability
-	if err := readJSON(filepath.ToSlash(filepath.Join(id, "capabilities.json")), &capabilities); err != nil {
-		return nil, err
-	}
-	assets := map[string][]byte{}
-	if err := collectAssets(id, id, assets); err != nil {
-		return nil, err
-	}
-	return pluginbundle.Build(manifest, capabilities, assets)
+	return out
 }
 
-func readJSON(name string, target any) error {
-	raw, err := files.ReadFile(name)
+func buildFromSource(id string) ([]byte, error) {
+	root, err := repoRoot()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if err := json.Unmarshal(raw, target); err != nil {
-		return fmt.Errorf("read %s: %w", name, err)
+	output := filepath.Join(os.TempDir(), "ra-builtin-"+id+".wasm")
+	cmd := exec.Command("go", "build", "-buildvcs=false", "-buildmode=c-shared", "-o", output, "./plugins/"+id)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(),
+		"GOOS=wasip1",
+		"GOARCH=wasm",
+		"GOCACHE="+filepath.Join(os.TempDir(), "ra-plugin-gocache"),
+	)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("build plugin: %w: %s", err, stderr.String())
 	}
-	return nil
+	raw, err := os.ReadFile(output)
+	_ = os.Remove(output)
+	return raw, err
 }
 
-func collectAssets(root string, dir string, assets map[string][]byte) error {
-	entries, err := files.ReadDir(dir)
-	if err != nil {
-		return err
+func repoRoot() (string, error) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", fmt.Errorf("resolve plugin source root")
 	}
-	for _, entry := range entries {
-		name := filepath.ToSlash(filepath.Join(dir, entry.Name()))
-		if entry.IsDir() {
-			if err := collectAssets(root, name, assets); err != nil {
-				return err
-			}
-			continue
-		}
-		if strings.HasSuffix(name, "/manifest.json") || strings.HasSuffix(name, "/capabilities.json") {
-			continue
-		}
-		raw, err := files.ReadFile(name)
-		if err != nil {
-			return err
-		}
-		rel := strings.TrimPrefix(name, root)
-		assets[rel] = raw
-	}
-	return nil
+	return filepath.Dir(filepath.Dir(file)), nil
 }

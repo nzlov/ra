@@ -10,7 +10,7 @@ RA is a Linux-first launcher prototype built with Go and Wails v3. It aims for a
 - Loads built-in plugins from embedded source under `plugins/`.
 - Loads user plugin packages from `~/.local/share/ra/plugins/*.wasm`.
 - Provides the built-in `ra-plugin-manager` plugin for local plugin install, enable, disable, uninstall, and refresh workflows.
-- Models plugins as single `.wasm` files with manifest, capabilities, permissions, and UI assets in RA custom sections.
+- Models plugins as Go/WASI `.wasm` files built from plugin-owned Go source, manifest, capabilities, permissions, search behavior, and embedded UI assets.
 - Supports capability-level enable and disable.
 - Serves enabled capability UI assets under `/plugins/<plugin-id>/<capability-id>/...` in a sandboxed iframe.
 - Exposes host actions to plugin UIs through a permission-checked `window.ra.invoke()` bridge.
@@ -49,6 +49,12 @@ This machine has `CGO_ENABLED=0` in the Go environment. Wails on Linux needs cgo
 See `docs/plugins.md` for the current local plugin contract.
 
 Built-in plugin source lives in the repository `plugins/` directory. Demo plugin source lives under `examples/`. User-installed plugin packages should live under `~/.local/share/ra/plugins/<plugin-id>.wasm`.
+
+Build a plugin package with:
+
+```sh
+GOOS=wasip1 GOARCH=wasm go build -buildvcs=false -buildmode=c-shared -o codec-tools.wasm ./examples/codec-tools
+```
 
 Plugin and capability enable/disable state is stored in `~/.config/ra/plugins.json`. The plugin manager can disable built-in plugins such as `ra-app-launcher`, but it only uninstalls user plugin files and refuses to disable or uninstall its own management capability.
 

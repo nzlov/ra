@@ -3,25 +3,17 @@ package app
 import (
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/nzlov/ra/internal/desktop"
-	"github.com/nzlov/ra/internal/pluginbundle"
-	"github.com/nzlov/ra/internal/plugins"
 )
 
 func TestSearchMergesCalculatorAppsAndCapabilities(t *testing.T) {
 	root := t.TempDir()
 	user := filepath.Join(root, "user")
-	writeWASMPlugin(t, user, pluginbundle.Manifest{ID: "codec-tools", Name: "Codec Tools", Version: "0.1.0"}, []pluginbundle.Capability{{
-		ID:       "base64",
-		Title:    "Base64 Convert",
-		UI:       "/base64/index.html",
-		Keywords: []string{"base64", "b64"},
-	}})
+	writeCodecPlugin(t, user)
 
 	service := NewLauncherService(Config{
 		PluginRoots:    []string{user},
@@ -67,7 +59,7 @@ func TestSearchMergesCalculatorAppsAndCapabilities(t *testing.T) {
 func TestRefreshPluginsLoadsBuiltinAndUserWASMPlugins(t *testing.T) {
 	root := t.TempDir()
 	user := filepath.Join(root, "user")
-	writeWASMPlugin(t, user, pluginbundle.Manifest{ID: "codec-tools", Name: "Codec Tools", Version: "0.1.0"}, nil)
+	writeCodecPlugin(t, user)
 
 	service := NewLauncherService(Config{
 		PluginRoots:    []string{user},
@@ -160,12 +152,7 @@ func TestDisablingCapabilityRemovesCapabilitySearchResults(t *testing.T) {
 	root := t.TempDir()
 	user := filepath.Join(root, "user")
 	configPath := filepath.Join(root, "config", "plugins.json")
-	writeWASMPlugin(t, user, pluginbundle.Manifest{ID: "codec-tools", Name: "Codec Tools", Version: "0.1.0"}, []pluginbundle.Capability{{
-		ID:       "base64",
-		Title:    "Base64 Convert",
-		UI:       "/base64/index.html",
-		Keywords: []string{"base64"},
-	}})
+	writeCodecPlugin(t, user)
 
 	service := NewLauncherService(Config{
 		PluginRoots:      []string{user},
@@ -194,12 +181,7 @@ func TestDisablingCapabilityRemovesCapabilitySearchResults(t *testing.T) {
 func TestServeHTTPReturnsEnabledCapabilityAsset(t *testing.T) {
 	root := t.TempDir()
 	user := filepath.Join(root, "user")
-	writeWASMPlugin(t, user, pluginbundle.Manifest{ID: "codec-tools", Name: "Codec Tools", Version: "0.1.0"}, []pluginbundle.Capability{{
-		ID:       "base64",
-		Title:    "Base64 Convert",
-		UI:       "/base64/index.html",
-		Keywords: []string{"base64"},
-	}})
+	writeCodecPlugin(t, user)
 
 	service := NewLauncherService(Config{
 		PluginRoots:    []string{user},
@@ -234,11 +216,7 @@ func TestServeHTTPReturnsEnabledCapabilityAsset(t *testing.T) {
 func TestServeHTTPAcceptsRoutePrefixedCapabilityAsset(t *testing.T) {
 	root := t.TempDir()
 	user := filepath.Join(root, "user")
-	writeWASMPlugin(t, user, pluginbundle.Manifest{ID: "codec-tools", Name: "Codec Tools", Version: "0.1.0"}, []pluginbundle.Capability{{
-		ID:    "base64",
-		Title: "Base64 Convert",
-		UI:    "/base64/index.html",
-	}})
+	writeCodecPlugin(t, user)
 
 	service := NewLauncherService(Config{
 		PluginRoots:    []string{user},
@@ -261,20 +239,7 @@ func TestServeHTTPAcceptsRoutePrefixedCapabilityAsset(t *testing.T) {
 func TestServeHTTPReturnsPluginSharedAssetForEnabledCapability(t *testing.T) {
 	root := t.TempDir()
 	user := filepath.Join(root, "user")
-	raw := mustBundleWithAssets(t,
-		pluginbundle.Manifest{ID: "codec-tools", Name: "Codec Tools", Version: "0.1.0"},
-		[]pluginbundle.Capability{{
-			ID:    "base64",
-			Title: "Base64 Convert",
-			UI:    "/base64/index.html",
-			Icon:  "/icons/base64.svg",
-		}},
-		map[string][]byte{
-			"/base64/index.html": []byte("<main><img src=\"../icons/base64.svg\"></main>"),
-			"/icons/base64.svg":  []byte("<svg></svg>"),
-		},
-	)
-	writeRawWASMPlugin(t, user, "codec-tools", raw)
+	writeCodecPlugin(t, user)
 
 	service := NewLauncherService(Config{
 		PluginRoots:    []string{user},
@@ -301,12 +266,7 @@ func TestServeHTTPRejectsDisabledCapabilityAsset(t *testing.T) {
 	root := t.TempDir()
 	user := filepath.Join(root, "user")
 	configPath := filepath.Join(root, "config", "plugins.json")
-	writeWASMPlugin(t, user, pluginbundle.Manifest{ID: "codec-tools", Name: "Codec Tools", Version: "0.1.0"}, []pluginbundle.Capability{{
-		ID:       "base64",
-		Title:    "Base64 Convert",
-		UI:       "/base64/index.html",
-		Keywords: []string{"base64"},
-	}})
+	writeCodecPlugin(t, user)
 
 	service := NewLauncherService(Config{
 		PluginRoots:      []string{user},
@@ -334,18 +294,7 @@ func TestServeHTTPRejectsAnotherCapabilityUIAsset(t *testing.T) {
 	root := t.TempDir()
 	user := filepath.Join(root, "user")
 	configPath := filepath.Join(root, "config", "plugins.json")
-	raw := mustBundleWithAssets(t,
-		pluginbundle.Manifest{ID: "codec-tools", Name: "Codec Tools", Version: "0.1.0"},
-		[]pluginbundle.Capability{
-			{ID: "base64", Title: "Base64 Convert", UI: "/base64/index.html"},
-			{ID: "json", Title: "JSON Convert", UI: "/json/index.html"},
-		},
-		map[string][]byte{
-			"/base64/index.html": []byte("<main>base64</main>"),
-			"/json/index.html":   []byte("<main>json</main>"),
-		},
-	)
-	writeRawWASMPlugin(t, user, "codec-tools", raw)
+	writeCodecPlugin(t, user)
 
 	service := NewLauncherService(Config{
 		PluginRoots:      []string{user},
@@ -373,14 +322,7 @@ func TestPluginInvokeRequiresDeclaredPermission(t *testing.T) {
 	root := t.TempDir()
 	user := filepath.Join(root, "user")
 	configPath := filepath.Join(root, "config", "plugins.json")
-	writeWASMPlugin(t, user,
-		pluginbundle.Manifest{ID: "codec-tools", Name: "Codec Tools", Version: "0.1.0"},
-		[]pluginbundle.Capability{{
-			ID:    "base64",
-			Title: "Base64 Convert",
-			UI:    "/base64/index.html",
-		}},
-	)
+	writeCodecPluginNoPermissions(t, user)
 
 	service := NewLauncherService(Config{
 		PluginRoots:      []string{user},
@@ -416,19 +358,7 @@ func TestPluginInvokeAllowsDeclaredPermissionForEnabledCapability(t *testing.T) 
 	root := t.TempDir()
 	user := filepath.Join(root, "user")
 	var gotStdin string
-	writeWASMPlugin(t, user,
-		pluginbundle.Manifest{
-			ID:          "codec-tools",
-			Name:        "Codec Tools",
-			Version:     "0.1.0",
-			Permissions: []string{"clipboard:write"},
-		},
-		[]pluginbundle.Capability{{
-			ID:    "base64",
-			Title: "Base64 Convert",
-			UI:    "/base64/index.html",
-		}},
-	)
+	writeCodecPlugin(t, user)
 
 	service := NewLauncherService(Config{
 		PluginRoots:    []string{user},
@@ -465,19 +395,7 @@ func TestPluginInvokeAllowsDeclaredPermissionForEnabledCapability(t *testing.T) 
 func TestPluginInvokeRejectsAppLaunchCommand(t *testing.T) {
 	root := t.TempDir()
 	user := filepath.Join(root, "user")
-	writeWASMPlugin(t, user,
-		pluginbundle.Manifest{
-			ID:          "codec-tools",
-			Name:        "Codec Tools",
-			Version:     "0.1.0",
-			Permissions: []string{"apps:launch"},
-		},
-		[]pluginbundle.Capability{{
-			ID:    "base64",
-			Title: "Base64 Convert",
-			UI:    "/base64/index.html",
-		}},
-	)
+	writeCodecPluginAppLaunch(t, user)
 
 	service := NewLauncherService(Config{
 		PluginRoots:    []string{user},
@@ -613,98 +531,4 @@ func TestBuiltinPluginsLoadFromEmbeddedBundles(t *testing.T) {
 	if got := findManagedCapability(t, calculator, "calculate"); got.UI != "/calculator/index.html" {
 		t.Fatalf("calculator capability = %#v", got)
 	}
-}
-
-func builtinTestPlugins(t *testing.T) []plugins.BuiltinPlugin {
-	t.Helper()
-	return []plugins.BuiltinPlugin{
-		{
-			Name: "ra-calculator",
-			Raw: mustBundle(t, pluginbundle.Manifest{
-				ID:          "ra-calculator",
-				Name:        "RA Calculator",
-				Version:     "0.1.0",
-				Permissions: []string{"clipboard:write"},
-			}, []pluginbundle.Capability{{
-				ID:       "calculate",
-				Title:    "Calculator",
-				UI:       "/calculator/index.html",
-				Keywords: []string{"=", "calculator", "calc", "math"},
-			}}),
-		},
-		{
-			Name: "ra-app-launcher",
-			Raw: mustBundle(t, pluginbundle.Manifest{
-				ID:          "ra-app-launcher",
-				Name:        "RA App Launcher",
-				Version:     "0.1.0",
-				Permissions: []string{"apps:read", "apps:launch"},
-			}, []pluginbundle.Capability{{
-				ID:       "apps",
-				Title:    "Applications",
-				UI:       "/apps/index.html",
-				Keywords: []string{"app", "apps", "fire"},
-			}}),
-		},
-		{
-			Name: "ra-plugin-manager",
-			Raw: mustBundle(t, pluginbundle.Manifest{
-				ID:          "ra-plugin-manager",
-				Name:        "RA Plugin Manager",
-				Version:     "0.1.0",
-				Permissions: []string{"plugins:manage"},
-			}, []pluginbundle.Capability{{
-				ID:       "manage",
-				Title:    "Plugin Manager",
-				UI:       "/manager/index.html",
-				Keywords: []string{"plugin", "manager"},
-			}}),
-		},
-	}
-}
-
-func writeWASMPlugin(t *testing.T, root string, manifest pluginbundle.Manifest, capabilities []pluginbundle.Capability) string {
-	t.Helper()
-	raw := mustBundle(t, manifest, capabilities)
-	return writeRawWASMPlugin(t, root, manifest.ID, raw)
-}
-
-func writeRawWASMPlugin(t *testing.T, root string, id string, raw []byte) string {
-	t.Helper()
-	if err := os.MkdirAll(root, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(root, id+".wasm")
-	if err := os.WriteFile(path, raw, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
-func mustBundle(t *testing.T, manifest pluginbundle.Manifest, capabilities []pluginbundle.Capability) []byte {
-	t.Helper()
-	raw := mustBundleWithAssets(t, manifest, capabilities, bundleAssets(capabilities))
-	return raw
-}
-
-func mustBundleWithAssets(t *testing.T, manifest pluginbundle.Manifest, capabilities []pluginbundle.Capability, assets map[string][]byte) []byte {
-	t.Helper()
-	raw, err := pluginbundle.Build(manifest, capabilities, assets)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return raw
-}
-
-func bundleAssets(capabilities []pluginbundle.Capability) map[string][]byte {
-	assets := map[string][]byte{
-		"/index.html": []byte("<main></main>"),
-	}
-	for _, capability := range capabilities {
-		assets[capability.UI] = []byte("<main>" + capability.ID + "</main>")
-		if capability.Icon != "" {
-			assets[capability.Icon] = []byte("<svg></svg>")
-		}
-	}
-	return assets
 }

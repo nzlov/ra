@@ -27,6 +27,7 @@ tasks:
     summary: Builds the application for Windows
     deps:
       - task: go:mod:tidy
+      - task: build:plugins
       - task: build:frontend
         vars:
           BUILD_FLAGS: '{{.BUILD_FLAGS}}'
@@ -80,6 +81,7 @@ tasks:
     summary: Creates a production build of the application
     deps:
       - task: go:mod:tidy
+      - task: build:plugins
       - task: build:frontend
         vars:
           BUILD_FLAGS: '{{.BUILD_FLAGS}}'
@@ -134,6 +136,7 @@ tasks:
     summary: Builds the application for Linux
     deps:
       - task: go:mod:tidy
+      - task: build:plugins
       - task: build:frontend
         vars:
           BUILD_FLAGS: '{{.BUILD_FLAGS}}'
@@ -387,6 +390,21 @@ tasks:
           BUILD_FLAGS: '{{.BUILD_FLAGS}}'
     cmds:
       - npm run build -q
+
+  build:plugins:
+    summary: Builds built-in Go/WASI plugins into generated embed data
+    sources:
+      - "plugins/ra-app-launcher/**/*"
+      - "plugins/ra-calculator/**/*"
+      - "plugins/ra-plugin-manager/**/*"
+      - "pkg/raplugin/**/*"
+      - "cmd/ra-build-plugins/**/*"
+      - go.mod
+      - go.sum
+    generates:
+      - "plugins/builtins_data.go"
+    cmds:
+      - go run ./cmd/ra-build-plugins
 
   generate:bindings:
     summary: Generates bindings for the frontend

@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"mime"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/nzlov/ra/internal/desktop"
 	"github.com/nzlov/ra/internal/plugins"
+	"github.com/nzlov/ra/pkg/raplugin"
 	builtinplugins "github.com/nzlov/ra/plugins"
 )
 
@@ -56,6 +58,7 @@ type Action struct {
 type InvokeResult struct {
 	Type    string `json:"type"`
 	Message string `json:"message"`
+	Data    any    `json:"data,omitempty"`
 }
 
 type PluginActionRequest struct {
@@ -152,29 +155,7 @@ func (s *LauncherService) setDesktopEntries(entries []desktop.Entry) {
 
 func (s *LauncherService) Search(query string) []Result {
 	results := make([]Result, 0, s.config.Limit)
-	if s.capabilityEnabled(appLauncherPluginID, "apps") {
-		for _, entry := range desktop.Search(s.desktopEntries, query, s.config.Limit) {
-			results = append(results, Result{
-				ID:       "app:" + entry.ID,
-				Title:    entry.Name,
-				Subtitle: entry.Comment,
-				Kind:     "app",
-				Action: Action{
-					Type:         "app.launch",
-					AppID:        entry.ID,
-					Command:      entry.LaunchCommand(),
-					PluginID:     appLauncherPluginID,
-					CapabilityID: "apps",
-				},
-			})
-		}
-	}
-
-	remaining := s.config.Limit - len(results)
-	if remaining <= 0 {
-		return results
-	}
-	for _, result := range s.searchCapabilities(query, remaining) {
+	for _, result := range s.searchPlugins(query, s.config.Limit) {
 		results = append(results, Result{
 			ID:       result.ID,
 			Title:    result.Title,
@@ -182,6 +163,9 @@ func (s *LauncherService) Search(query string) []Result {
 			Kind:     result.Kind,
 			Action: Action{
 				Type:         actionType(result),
+				AppID:        result.Action.AppID,
+				Command:      result.Action.Command,
+				Text:         result.Action.Text,
 				PluginID:     result.Action.PluginID,
 				CapabilityID: result.Action.CapabilityID,
 				UI:           result.Action.UI,
@@ -192,17 +176,13 @@ func (s *LauncherService) Search(query string) []Result {
 	return results
 }
 
-func (s *LauncherService) searchCapabilities(query string, limit int) []plugins.Result {
+func (s *LauncherService) searchPlugins(query string, limit int) []plugins.Result {
 	registry := s.pluginRegistry
-	filtered := make([]plugins.Plugin, 0, len(registry.Plugins))
-	for _, plugin := range registry.Plugins {
-		if plugin.ID == appLauncherPluginID {
-			continue
-		}
-		filtered = append(filtered, plugin)
-	}
-	registry.Plugins = filtered
-	return registry.Search(query, limit)
+	return registry.SearchWithContext(plugins.SearchRequest{
+		Query: query,
+		Limit: limit,
+		Apps:  desktopEntriesForPlugins(s.desktopEntries),
+	})
 }
 
 func (s *LauncherService) Invoke(action Action) (InvokeResult, error) {
@@ -238,6 +218,9 @@ func (s *LauncherService) InvokePluginAction(request PluginActionRequest) (Invok
 	}
 	if !containsString(plugin.Permissions, permission) {
 		return InvokeResult{}, errMissingPluginPermission(plugin.ID, permission)
+	}
+	if result, ok, err := s.invokePluginManagerAction(request.Action); ok {
+		return result, err
 	}
 	return s.actions.Invoke(request.Action)
 }
@@ -331,6 +314,19 @@ func samePath(a string, b string) bool {
 	return filepath.Clean(absA) == filepath.Clean(absB)
 }
 
+func desktopEntriesForPlugins(entries []desktop.Entry) []raplugin.App {
+	apps := make([]raplugin.App, 0, len(entries))
+	for _, entry := range entries {
+		apps = append(apps, raplugin.App{
+			ID:      entry.ID,
+			Name:    entry.Name,
+			Comment: entry.Comment,
+			Command: entry.LaunchCommand(),
+		})
+	}
+	return apps
+}
+
 func parseCapabilityAssetPath(requestPath string) (string, string, string, bool) {
 	parts := strings.Split(strings.TrimPrefix(path.Clean("/"+requestPath), "/"), "/")
 	if len(parts) > 0 && parts[0] == "plugins" {
@@ -411,6 +407,8 @@ func permissionForAction(actionType string) (string, bool) {
 	switch actionType {
 	case "clipboard.write":
 		return "clipboard:write", true
+	case "plugins.state", "plugins.install", "plugins.setEnabled", "plugins.setCapabilityEnabled", "plugins.uninstall", "plugins.refresh":
+		return "plugins:manage", true
 	default:
 		return "", false
 	}
@@ -433,6 +431,69 @@ func errUnsupportedPluginAction(actionType string) error {
 		return errors.New("missing plugin action type")
 	}
 	return fmt.Errorf("plugin action %q is not supported", actionType)
+}
+
+func (s *LauncherService) invokePluginManagerAction(action Action) (InvokeResult, bool, error) {
+	switch action.Type {
+	case "plugins.state":
+		return InvokeResult{Type: "plugins.state", Data: s.PluginManagerState()}, true, nil
+	case "plugins.install":
+		var payload struct {
+			Path string `json:"path"`
+		}
+		if err := decodeActionPayload(action.Text, &payload); err != nil {
+			return InvokeResult{}, true, err
+		}
+		result, err := s.InstallPlugin(payload.Path)
+		return InvokeResult{Type: "plugins.install", Data: result}, true, err
+	case "plugins.setEnabled":
+		var payload struct {
+			ID      string `json:"id"`
+			Enabled bool   `json:"enabled"`
+		}
+		if err := decodeActionPayload(action.Text, &payload); err != nil {
+			return InvokeResult{}, true, err
+		}
+		state, err := s.SetPluginEnabled(payload.ID, payload.Enabled)
+		return InvokeResult{Type: "plugins.state", Data: state}, true, err
+	case "plugins.setCapabilityEnabled":
+		var payload struct {
+			PluginID     string `json:"pluginId"`
+			CapabilityID string `json:"capabilityId"`
+			Enabled      bool   `json:"enabled"`
+		}
+		if err := decodeActionPayload(action.Text, &payload); err != nil {
+			return InvokeResult{}, true, err
+		}
+		state, err := s.SetCapabilityEnabled(payload.PluginID, payload.CapabilityID, payload.Enabled)
+		return InvokeResult{Type: "plugins.state", Data: state}, true, err
+	case "plugins.uninstall":
+		var payload struct {
+			ID string `json:"id"`
+		}
+		if err := decodeActionPayload(action.Text, &payload); err != nil {
+			return InvokeResult{}, true, err
+		}
+		state, err := s.UninstallPlugin(payload.ID)
+		return InvokeResult{Type: "plugins.state", Data: state}, true, err
+	case "plugins.refresh":
+		if err := s.RefreshPlugins(); err != nil {
+			return InvokeResult{}, true, err
+		}
+		return InvokeResult{Type: "plugins.state", Data: s.PluginManagerState()}, true, nil
+	default:
+		return InvokeResult{}, false, nil
+	}
+}
+
+func decodeActionPayload(raw string, target any) error {
+	if strings.TrimSpace(raw) == "" {
+		return errors.New("missing plugin action payload")
+	}
+	if err := json.Unmarshal([]byte(raw), target); err != nil {
+		return fmt.Errorf("read plugin action payload: %w", err)
+	}
+	return nil
 }
 
 func (s *LauncherService) pluginEnabled(id string) bool {

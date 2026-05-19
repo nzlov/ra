@@ -1,6 +1,0 @@
-{
-  "id": "ra-app-launcher",
-  "name": "RA App Launcher",
-  "version": "0.1.0",
-  "permissions": ["apps:read", "apps:launch"]
-}

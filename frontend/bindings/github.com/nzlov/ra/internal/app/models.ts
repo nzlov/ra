@@ -69,6 +69,7 @@ export class InstallPluginResult {
 export class InvokeResult {
     "type": string;
     "message": string;
+    "data"?: any;
 
     /** Creates a new InvokeResult instance. */
     constructor($$source: Partial<InvokeResult> = {}) {

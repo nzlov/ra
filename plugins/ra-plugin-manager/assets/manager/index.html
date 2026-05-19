@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Plugin Manager</title>
+    <style>
+      :root {
+        color: #17202a;
+        background: #f6f8fb;
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #f6f8fb;
+      }
+
+      main {
+        display: grid;
+        gap: 10px;
+        padding: 12px;
+      }
+
+      header,
+      footer {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      header {
+        justify-content: space-between;
+      }
+
+      h1 {
+        margin: 0;
+        color: #111827;
+        font-size: 18px;
+      }
+
+      button {
+        min-height: 34px;
+        border: 1px solid #cbd5df;
+        border-radius: 7px;
+        background: #ffffff;
+        color: #17202a;
+        padding: 0 10px;
+        font: inherit;
+      }
+
+      button.danger {
+        border-color: #fecaca;
+        color: #991b1b;
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
+
+      input[type="text"] {
+        min-width: 280px;
+        flex: 1 1 320px;
+        min-height: 34px;
+        border: 1px solid #cbd5df;
+        border-radius: 7px;
+        padding: 0 10px;
+        font: inherit;
+      }
+
+      .list {
+        display: grid;
+        gap: 8px;
+      }
+
+      article,
+      .errors {
+        display: grid;
+        gap: 8px;
+        border: 1px solid #d8e0ea;
+        border-radius: 7px;
+        background: #ffffff;
+        padding: 10px;
+      }
+
+      article.disabled {
+        background: #f1f4f7;
+      }
+
+      .top,
+      .capability {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .meta,
+      small {
+        color: #667085;
+        font-size: 12px;
+      }
+
+      strong,
+      small {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: #344054;
+        font-size: 12px;
+      }
+
+      .caps {
+        display: grid;
+        gap: 6px;
+      }
+
+      .capability {
+        border: 1px solid #e3e8ef;
+        border-radius: 7px;
+        padding: 8px;
+      }
+
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .error {
+        color: #b45309;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Plugin Manager</h1>
+        <div class="row">
+          <button id="refresh" type="button">Refresh</button>
+        </div>
+      </header>
+
+      <div class="row">
+        <input id="install-path" type="text" placeholder="/path/to/plugin.wasm" />
+        <button id="install" type="button">Install</button>
+      </div>
+
+      <section id="list" class="list"></section>
+      <section id="errors" class="errors" hidden></section>
+      <footer id="status">Loading</footer>
+    </main>
+    <script>
+      const list = document.querySelector('#list');
+      const errors = document.querySelector('#errors');
+      const status = document.querySelector('#status');
+      const installPath = document.querySelector('#install-path');
+
+      function payload(value) {
+        return JSON.stringify(value);
+      }
+
+      async function invoke(type, value = {}) {
+        const result = await window.ra.invoke({type, text: payload(value)});
+        return result.data;
+      }
+
+      async function load() {
+        try {
+          const state = await invoke('plugins.state');
+          render(state);
+        } catch (error) {
+          status.textContent = String(error.message || error);
+        }
+      }
+
+      function render(state) {
+        status.textContent = `${state.plugins.length} plugins · ${state.loadErrors.length} errors`;
+        list.replaceChildren(...state.plugins.map(renderPlugin));
+        errors.hidden = state.loadErrors.length === 0;
+        errors.replaceChildren(
+          ...state.loadErrors.map((item) => {
+            const row = document.createElement('div');
+            row.className = 'error';
+            row.textContent = `${item.path}: ${item.error}`;
+            return row;
+          })
+        );
+      }
+
+      function renderPlugin(plugin) {
+        const item = document.createElement('article');
+        item.className = plugin.enabled ? '' : 'disabled';
+        const top = document.createElement('div');
+        top.className = 'top';
+        const title = document.createElement('div');
+        title.innerHTML = `<strong>${escapeHTML(plugin.name)}</strong><br><small>${escapeHTML(plugin.id)} · ${escapeHTML(plugin.source)} · ${escapeHTML(plugin.version || '')}</small>`;
+        const actions = document.createElement('div');
+        actions.className = 'row';
+
+        const enabled = document.createElement('label');
+        enabled.innerHTML = `<input type="checkbox" ${plugin.enabled ? 'checked' : ''} ${plugin.protected ? 'disabled' : ''}> ${plugin.enabled ? 'Enabled' : 'Disabled'}`;
+        enabled.querySelector('input').addEventListener('change', async (event) => {
+          const state = await invoke('plugins.setEnabled', {id: plugin.id, enabled: event.currentTarget.checked});
+          render(state);
+        });
+        actions.append(enabled);
+
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'danger';
+        remove.textContent = 'Remove';
+        remove.disabled = !plugin.uninstallable;
+        remove.addEventListener('click', async () => {
+          const state = await invoke('plugins.uninstall', {id: plugin.id});
+          render(state);
+        });
+        actions.append(remove);
+
+        top.append(title, actions);
+        item.append(top);
+
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        meta.textContent = plugin.permissions.length ? `Permissions: ${plugin.permissions.join(', ')}` : 'No permissions declared';
+        item.append(meta);
+
+        const caps = document.createElement('div');
+        caps.className = 'caps';
+        for (const capability of plugin.capabilities) {
+          const row = document.createElement('div');
+          row.className = 'capability';
+          const text = document.createElement('div');
+          text.innerHTML = `<strong>${escapeHTML(capability.title)}</strong><br><small>${escapeHTML(capability.id)} · ${escapeHTML(capability.ui)}</small>`;
+          const toggle = document.createElement('label');
+          toggle.innerHTML = `<input type="checkbox" ${capability.enabled ? 'checked' : ''} ${plugin.protected && capability.id === 'manage' ? 'disabled' : ''}> ${capability.enabled ? 'Enabled' : 'Disabled'}`;
+          toggle.querySelector('input').addEventListener('change', async (event) => {
+            const state = await invoke('plugins.setCapabilityEnabled', {
+              pluginId: plugin.id,
+              capabilityId: capability.id,
+              enabled: event.currentTarget.checked
+            });
+            render(state);
+          });
+          row.append(text, toggle);
+          caps.append(row);
+        }
+        item.append(caps);
+        return item;
+      }
+
+      function escapeHTML(value) {
+        return String(value).replace(/[&<>"']/g, (ch) => {
+          return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch];
+        });
+      }
+
+      document.querySelector('#refresh').addEventListener('click', async () => {
+        const state = await invoke('plugins.refresh');
+        render(state);
+      });
+      document.querySelector('#install').addEventListener('click', async () => {
+        const path = installPath.value.trim();
+        if (!path) return;
+        const result = await invoke('plugins.install', {path});
+        render(result.state);
+      });
+      load();
+    </script>
+  </body>
+</html>

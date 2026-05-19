@@ -7,7 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nzlov/ra/internal/pluginbundle"
+	"github.com/nzlov/ra/internal/pluginruntime"
+	"github.com/nzlov/ra/pkg/raplugin"
 )
 
 type Registry struct {
@@ -34,6 +35,7 @@ type Plugin struct {
 	Permissions  []string          `json:"permissions,omitempty"`
 	Capabilities []Capability      `json:"capabilities,omitempty"`
 	Assets       map[string][]byte `json:"-"`
+	Raw          []byte            `json:"-"`
 	Source       string            `json:"source,omitempty"`
 	Path         string            `json:"-"`
 	Disabled     bool              `json:"-"`
@@ -63,10 +65,19 @@ type Result struct {
 
 type Action struct {
 	Type         string `json:"type"`
+	AppID        string `json:"appId,omitempty"`
+	Command      string `json:"command,omitempty"`
+	Text         string `json:"text,omitempty"`
 	PluginID     string `json:"pluginId"`
 	CapabilityID string `json:"capabilityId,omitempty"`
 	UI           string `json:"ui,omitempty"`
 	Query        string `json:"query,omitempty"`
+}
+
+type SearchRequest struct {
+	Query string
+	Limit int
+	Apps  []raplugin.App
 }
 
 func LoadRegistry(root string) (Registry, error) {
@@ -164,55 +175,98 @@ func addPlugin(plugin Plugin, registry *Registry, seenPlugins map[string]string)
 }
 
 func (r Registry) Search(query string, limit int) []Result {
-	trimmed := strings.TrimSpace(query)
-	tokens := strings.Fields(strings.ToLower(trimmed))
+	return r.SearchWithContext(SearchRequest{Query: query, Limit: limit})
+}
+
+func (r Registry) SearchWithContext(request SearchRequest) []Result {
+	trimmed := strings.TrimSpace(request.Query)
 	var results []Result
 	for _, plugin := range r.Plugins {
 		if plugin.Disabled {
 			continue
 		}
-		for _, capability := range plugin.Capabilities {
-			if capability.Disabled {
+		pluginResults, err := pluginruntime.Search(plugin.Raw, raplugin.SearchRequest{
+			Query: trimmed,
+			Limit: request.Limit,
+			Apps:  append([]raplugin.App(nil), request.Apps...),
+		})
+		if err != nil {
+			continue
+		}
+		for _, result := range pluginResults {
+			if !pluginCapabilityEnabled(plugin, result.Action.CapabilityID) {
 				continue
 			}
-			text := strings.ToLower(plugin.Name + " " + capability.Title + " " + strings.Join(capability.Keywords, " "))
-			if len(tokens) > 0 && !matchesAnyToken(text, tokens) {
-				continue
-			}
-			results = append(results, Result{
-				ID:       "capability:" + plugin.ID + ":" + capability.ID,
-				Title:    capability.Title,
-				Subtitle: plugin.Name,
-				Kind:     "capability",
-				Action: Action{
-					Type:         "capability.open",
-					PluginID:     plugin.ID,
-					CapabilityID: capability.ID,
-					UI:           capability.UI,
-					Query:        trimmed,
-				},
-			})
+			results = append(results, resultFromPlugin(plugin, result, trimmed))
 		}
 	}
-	if limit > 0 && len(results) > limit {
-		return results[:limit]
+	if request.Limit > 0 && len(results) > request.Limit {
+		return results[:request.Limit]
 	}
 	return results
 }
 
-func matchesAnyToken(text string, tokens []string) bool {
-	words := strings.Fields(text)
-	for _, token := range tokens {
-		if strings.Contains(text, token) {
-			return true
-		}
-		for _, word := range words {
-			if word != "" && strings.Contains(token, word) {
-				return true
-			}
+func pluginCapabilityEnabled(plugin Plugin, capabilityID string) bool {
+	if capabilityID == "" {
+		return false
+	}
+	for _, capability := range plugin.Capabilities {
+		if capability.ID == capabilityID {
+			return !capability.Disabled
 		}
 	}
 	return false
+}
+
+func resultFromPlugin(plugin Plugin, result raplugin.SearchResult, query string) Result {
+	action := Action{
+		Type:         result.Action.Type,
+		AppID:        result.Action.AppID,
+		Command:      result.Action.Command,
+		Text:         result.Action.Text,
+		PluginID:     result.Action.PluginID,
+		CapabilityID: result.Action.CapabilityID,
+		UI:           result.Action.UI,
+		Query:        result.Action.Query,
+	}
+	if action.PluginID == "" {
+		action.PluginID = plugin.ID
+	}
+	if action.Query == "" {
+		action.Query = query
+	}
+	if action.Type == "" {
+		action.Type = "capability.open"
+	}
+	if action.UI == "" {
+		if capability, ok := findCapability(plugin.Capabilities, action.CapabilityID); ok {
+			action.UI = capability.UI
+		}
+	}
+	id := result.ID
+	if id == "" {
+		id = "capability:" + plugin.ID + ":" + action.CapabilityID
+	}
+	kind := result.Kind
+	if kind == "" {
+		kind = "capability"
+	}
+	return Result{
+		ID:       id,
+		Title:    result.Title,
+		Subtitle: result.Subtitle,
+		Kind:     kind,
+		Action:   action,
+	}
+}
+
+func findCapability(capabilities []Capability, id string) (Capability, bool) {
+	for _, capability := range capabilities {
+		if capability.ID == id {
+			return capability, true
+		}
+	}
+	return Capability{}, false
 }
 
 func loadWASMFile(path string, source string) (Plugin, error) {
@@ -228,7 +282,7 @@ func LoadPluginFile(path string) (Plugin, error) {
 }
 
 func loadWASMBytes(raw []byte, source string, sourcePath string) (Plugin, error) {
-	bundle, err := pluginbundle.Read(raw)
+	bundle, err := pluginruntime.Load(raw)
 	if err != nil {
 		return Plugin{}, err
 	}
@@ -239,12 +293,13 @@ func loadWASMBytes(raw []byte, source string, sourcePath string) (Plugin, error)
 		Permissions:  append([]string(nil), bundle.Manifest.Permissions...),
 		Capabilities: capabilitiesFromBundle(bundle.Capabilities),
 		Assets:       cloneAssets(bundle.Assets),
+		Raw:          append([]byte(nil), raw...),
 		Source:       source,
 		Path:         sourcePath,
 	}, nil
 }
 
-func capabilitiesFromBundle(items []pluginbundle.Capability) []Capability {
+func capabilitiesFromBundle(items []raplugin.Capability) []Capability {
 	capabilities := make([]Capability, 0, len(items))
 	for _, item := range items {
 		capabilities = append(capabilities, Capability{

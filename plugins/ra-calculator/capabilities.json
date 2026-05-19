@@ -1,9 +1,0 @@
-[
-  {
-    "id": "calculate",
-    "title": "Calculator",
-    "icon": "/icons/calculator.svg",
-    "ui": "/calculator/index.html",
-    "keywords": ["=", "calculator", "calc", "math", "expression"]
-  }
-]

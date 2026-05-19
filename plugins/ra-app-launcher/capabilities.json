@@ -1,9 +1,0 @@
-[
-  {
-    "id": "apps",
-    "title": "Applications",
-    "icon": "/icons/apps.svg",
-    "ui": "/apps/index.html",
-    "keywords": ["app", "apps", "application", "launch", "open"]
-  }
-]

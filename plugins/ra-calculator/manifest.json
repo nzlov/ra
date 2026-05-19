@@ -1,6 +1,0 @@
-{
-  "id": "ra-calculator",
-  "name": "RA Calculator",
-  "version": "0.1.0",
-  "permissions": ["clipboard:write"]
-}

@@ -4,5 +4,6 @@
 /build/icons.icns
 /frontend/dist/
 /frontend/node_modules/
+/plugins/builtins_data.go
 
 *.log

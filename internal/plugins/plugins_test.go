@@ -1,26 +1,19 @@
 package plugins
 
 import (
+	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 
-	"github.com/nzlov/ra/internal/pluginbundle"
+	"github.com/nzlov/ra/pkg/raplugin"
 )
 
 func TestLoadRegistryReadsWASMPlugins(t *testing.T) {
 	root := t.TempDir()
-	writeBundle(t, filepath.Join(root, "codec-tools.wasm"), pluginbundle.Manifest{
-		ID:          "codec-tools",
-		Name:        "Codec Tools",
-		Version:     "0.1.0",
-		Permissions: []string{"clipboard:write"},
-	}, []pluginbundle.Capability{{
-		ID:       "base64",
-		Title:    "Base64 Convert",
-		UI:       "/base64/index.html",
-		Keywords: []string{"base64", "b64"},
-	}})
+	writeTestPlugin(t, root, "codec-tools", "./internal/plugins/testdata/codecplugin")
 
 	registry, err := LoadRegistry(root)
 	if err != nil {
@@ -46,8 +39,8 @@ func TestLoadRegistryReadsWASMPlugins(t *testing.T) {
 
 func TestLoadRegistryRejectsInvalidWASMAndIDConflicts(t *testing.T) {
 	root := t.TempDir()
-	writeBundle(t, filepath.Join(root, "first.wasm"), pluginbundle.Manifest{ID: "shared", Name: "Shared", Version: "0.1.0"}, nil)
-	writeBundle(t, filepath.Join(root, "second.wasm"), pluginbundle.Manifest{ID: "shared", Name: "Shared Again", Version: "0.1.0"}, nil)
+	writeTestPlugin(t, root, "first", "./internal/plugins/testdata/sharedone")
+	writeTestPlugin(t, root, "second", "./internal/plugins/testdata/sharedtwo")
 	if err := os.WriteFile(filepath.Join(root, "bad.wasm"), []byte("bad"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -67,12 +60,8 @@ func TestLoadRegistryRejectsInvalidWASMAndIDConflicts(t *testing.T) {
 func TestLoadRegistriesIncludesBuiltinPlugins(t *testing.T) {
 	userRoot := t.TempDir()
 	builtin := BuiltinPlugin{
-		Raw: mustBundle(t, pluginbundle.Manifest{ID: "ra-app-launcher", Name: "RA App Launcher", Version: "0.1.0"}, []pluginbundle.Capability{{
-			ID:       "apps",
-			Title:    "Apps",
-			UI:       "/apps/index.html",
-			Keywords: []string{"app"},
-		}}),
+		Name: "ra-app-launcher",
+		Raw:  buildTestPlugin(t, "./internal/plugins/testdata/appplugin"),
 	}
 
 	registry, err := LoadRegistriesWithSources([]Root{{Path: userRoot, Source: "user"}}, []BuiltinPlugin{builtin})
@@ -87,59 +76,76 @@ func TestLoadRegistriesIncludesBuiltinPlugins(t *testing.T) {
 	}
 }
 
-func TestSearchReturnsCapabilityResults(t *testing.T) {
-	registry := Registry{Plugins: []Plugin{{
-		ID:   "codec-tools",
-		Name: "Codec Tools",
-		Capabilities: []Capability{{
-			ID:       "base64",
-			Title:    "Base64 Convert",
-			UI:       "/base64/index.html",
-			Keywords: []string{"base64", "b64"},
-		}},
-	}}}
+func TestSearchCallsPluginSearch(t *testing.T) {
+	raw := buildTestPlugin(t, "./internal/plugins/testdata/appplugin")
+	plugin, err := loadWASMBytes(raw, "builtin", "ra-app-launcher")
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := Registry{Plugins: []Plugin{plugin}}
 
-	results := registry.Search("b64 hello", 10)
+	results := registry.SearchWithContext(SearchRequest{
+		Query: "fire",
+		Limit: 10,
+		Apps: []raplugin.App{{
+			ID:      "firefox",
+			Name:    "Firefox",
+			Comment: "Browser",
+			Command: "firefox",
+		}},
+	})
 	if len(results) != 1 {
 		t.Fatalf("len(results) = %d", len(results))
 	}
-	if results[0].Action.Type != "capability.open" {
+	if results[0].Action.Type != "app.launch" {
 		t.Fatalf("Action.Type = %q", results[0].Action.Type)
 	}
-	if results[0].Action.PluginID != "codec-tools" || results[0].Action.CapabilityID != "base64" {
+	if results[0].Action.PluginID != "ra-app-launcher" || results[0].Action.CapabilityID != "apps" {
 		t.Fatalf("Action = %#v", results[0].Action)
 	}
-	if results[0].Action.Query != "b64 hello" {
-		t.Fatalf("Query = %q", results[0].Action.Query)
-	}
 }
 
-func writeBundle(t *testing.T, path string, manifest pluginbundle.Manifest, capabilities []pluginbundle.Capability) {
+func writeTestPlugin(t *testing.T, root string, id string, pkg string) {
 	t.Helper()
-	raw := mustBundle(t, manifest, capabilities)
-	if err := os.WriteFile(path, raw, 0o644); err != nil {
+	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	output := filepath.Join(root, id+".wasm")
+	buildTestPluginTo(t, output, pkg)
 }
 
-func mustBundle(t *testing.T, manifest pluginbundle.Manifest, capabilities []pluginbundle.Capability) []byte {
+func buildTestPlugin(t *testing.T, pkg string) []byte {
 	t.Helper()
-	raw, err := pluginbundle.Build(manifest, capabilities, bundleAssets(capabilities))
+	output := filepath.Join(t.TempDir(), "plugin.wasm")
+	buildTestPluginTo(t, output, pkg)
+	raw, err := os.ReadFile(output)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return raw
 }
 
-func bundleAssets(capabilities []pluginbundle.Capability) map[string][]byte {
-	assets := map[string][]byte{
-		"/index.html": []byte("<main></main>"),
+func buildTestPluginTo(t *testing.T, output string, pkg string) {
+	t.Helper()
+	cmd := exec.Command("go", "build", "-buildvcs=false", "-buildmode=c-shared", "-o", output, pkg)
+	cmd.Dir = repoRootForTest(t)
+	cmd.Env = append(os.Environ(),
+		"GOOS=wasip1",
+		"GOARCH=wasm",
+		"GOCACHE="+filepath.Join(t.TempDir(), "gocache"),
+	)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("build test plugin: %v: %s", err, stderr.String())
 	}
-	for _, capability := range capabilities {
-		assets[capability.UI] = []byte("<main>" + capability.ID + "</main>")
-		if capability.Icon != "" {
-			assets[capability.Icon] = []byte("<svg></svg>")
-		}
+}
+
+func repoRootForTest(t *testing.T) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve test file")
 	}
-	return assets
+	return filepath.Dir(filepath.Dir(filepath.Dir(file)))
 }

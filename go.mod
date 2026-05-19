@@ -2,7 +2,10 @@ module github.com/nzlov/ra
 
 go 1.25.0
 
-require github.com/wailsapp/wails/v3 v3.0.0-alpha.93
+require (
+	github.com/tetratelabs/wazero v1.9.0
+	github.com/wailsapp/wails/v3 v3.0.0-alpha.93
+)
 
 require (
 	dario.cat/mergo v1.0.2 // indirect

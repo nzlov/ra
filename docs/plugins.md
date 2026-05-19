@@ -1,8 +1,8 @@
 # RA Plugin Contract
 
-RA plugins are single `.wasm` package files. RA core owns the launcher window, search integration, plugin registry, and controlled host APIs. Plugin code and UI resources are carried by the plugin package.
+RA plugins are single Go/WASI `.wasm` files. RA core owns the launcher window, plugin registry, UI hosting, enable/disable state, and controlled host APIs. Plugin code owns capabilities, search behavior, icons, and UI resources.
 
-Built-in plugins are stored as source directories under `plugins/`. At build/runtime RA embeds those source files and assembles valid WASM plugin bundles in memory; generated `.wasm` files are not committed. User-installed plugins live as files under `~/.local/share/ra/plugins/<plugin-id>.wasm`.
+Built-in plugins are Go source packages under `plugins/`. RA builds them with `GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared` and loads the resulting wasm bytes; generated `.wasm` files are not committed. User-installed plugins live as files under `~/.local/share/ra/plugins/<plugin-id>.wasm`.
 
 ## Built-In Plugins
 
@@ -12,37 +12,42 @@ Built-in plugins are stored as source directories under `plugins/`. At build/run
 
 Only `ra-plugin-manager.manage` is protected. Other built-in plugins can be disabled, but built-ins cannot be uninstalled or replaced by user plugin packages with the same ID.
 
-## Package Sections
+## Go Plugin Source
 
-Each plugin bundle is a WASM file with RA custom sections:
+Plugins use `pkg/raplugin` and register themselves from Go code:
 
-- `ra.manifest`: JSON object with plugin metadata.
-- `ra.capabilities`: JSON array describing capability entries.
-- `ra.assets`: JSON object whose keys are absolute asset paths and whose values are base64-encoded bytes.
+```go
+package main
 
-Manifest example:
+import (
+	"embed"
 
-```json
-{
-  "id": "codec-tools",
-  "name": "Codec Tools",
-  "version": "0.1.0",
-  "permissions": ["clipboard:write"]
+	"github.com/nzlov/ra/pkg/raplugin"
+)
+
+//go:embed assets/**
+var assets embed.FS
+
+func init() {
+	raplugin.Register(raplugin.Plugin{
+		Manifest: raplugin.Manifest{
+			ID:          "codec-tools",
+			Name:        "Codec Tools",
+			Version:     "0.1.0",
+			Permissions: []string{"clipboard:write"},
+		},
+		Capabilities: []raplugin.Capability{{
+			ID:       "base64",
+			Title:    "Base64 Convert",
+			Icon:     "/icons/codec.svg",
+			UI:       "/base64/index.html",
+			Keywords: []string{"base64", "b64"},
+		}},
+		Assets: raplugin.MustAssets(assets, "assets"),
+	})
 }
-```
 
-Capabilities example:
-
-```json
-[
-  {
-    "id": "base64",
-    "title": "Base64 Convert",
-    "icon": "/icons/codec.svg",
-    "ui": "/base64/index.html",
-    "keywords": ["base64", "b64", "encode", "decode"]
-  }
-]
+func main() {}
 ```
 
 Rules:
@@ -50,22 +55,21 @@ Rules:
 - Plugin IDs and capability IDs must match `^[a-z0-9][a-z0-9-_.]*$`.
 - A plugin may expose multiple capabilities.
 - Every capability has a UI asset path.
-- Asset paths in `ra.assets`, `icon`, and `ui` must start with `/`.
+- Asset paths in `Assets`, `icon`, and `ui` must start with `/`.
 - Capability UI assets must be `.html`, live below a capability-specific directory, and not share that UI directory with another capability.
 - Permissions are declared in the manifest for user review and are enforced when the capability asks RA to run host actions.
 
-Asset section example:
+Build a user plugin package with:
 
-```json
-{
-  "/base64/index.html": "PG1haW4+PC9tYWluPg==",
-  "/icons/codec.svg": "PHN2Zz48L3N2Zz4="
-}
+```sh
+GOOS=wasip1 GOARCH=wasm go build -buildvcs=false -buildmode=c-shared -o codec-tools.wasm ./examples/codec-tools
 ```
 
 ## Search And Launch
 
-RA searches capabilities, not legacy command entries. When a capability matches a query, RA returns a `capability.open` action with:
+RA asks each enabled plugin to search. `raplugin.DefaultSearch` searches the plugin's capabilities, while plugins can provide a custom `Search` function for richer behavior. `ra-app-launcher` uses this to search the app list supplied by RA as a controlled API input; app discovery and command validation stay in RA core.
+
+When a capability matches a query, the plugin returns a `capability.open` action with:
 
 - `pluginId`
 - `capabilityId`

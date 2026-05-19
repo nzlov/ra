@@ -1,6 +1,0 @@
-{
-  "id": "ra-plugin-manager",
-  "name": "RA Plugin Manager",
-  "version": "0.1.0",
-  "permissions": ["plugins:manage"]
-}

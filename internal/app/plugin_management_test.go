@@ -1,12 +1,11 @@
 package app
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/nzlov/ra/internal/pluginbundle"
 )
 
 func TestPluginManagerSearchResultOpensManagerCapability(t *testing.T) {
@@ -74,12 +73,7 @@ func TestSetPluginEnabledWritesDisabledConfigAndKeepsManagerEnabled(t *testing.T
 	root := t.TempDir()
 	user := filepath.Join(root, "user")
 	configPath := filepath.Join(root, "config", "plugins.json")
-	writeWASMPlugin(t, user, pluginbundle.Manifest{ID: "codec-tools", Name: "Codec Tools", Version: "0.1.0"}, []pluginbundle.Capability{{
-		ID:       "base64",
-		Title:    "Base64 Convert",
-		UI:       "/base64/index.html",
-		Keywords: []string{"base64"},
-	}})
+	writeCodecPlugin(t, user)
 
 	service := NewLauncherService(Config{
 		PluginRoots:      []string{user},
@@ -132,8 +126,8 @@ func TestInstallPluginCopiesWASMFileAndRejectsIDConflicts(t *testing.T) {
 	configPath := filepath.Join(root, "config", "plugins.json")
 	source := filepath.Join(root, "source", "codec-tools.wasm")
 	conflict := filepath.Join(root, "source", "ra-app-launcher.wasm")
-	writeWASMFile(t, source, pluginbundle.Manifest{ID: "codec-tools", Name: "Codec Tools", Version: "0.1.0"}, nil)
-	writeWASMFile(t, conflict, pluginbundle.Manifest{ID: "ra-app-launcher", Name: "Fake Apps", Version: "0.1.0"}, nil)
+	writeTestPlugin(t, filepath.Dir(source), "codec-tools", "./internal/app/testdata/codecplugin")
+	writeTestPlugin(t, filepath.Dir(conflict), "ra-app-launcher", "./internal/app/testdata/fakeapplauncher")
 
 	service := NewLauncherService(Config{
 		PluginRoots:      []string{user},
@@ -185,11 +179,72 @@ func TestInstallPluginRejectsDirectoriesAndInvalidWASM(t *testing.T) {
 	}
 }
 
+func TestPluginManagerCapabilityUsesControlledManagementActions(t *testing.T) {
+	root := t.TempDir()
+	user := filepath.Join(root, "user")
+	configPath := filepath.Join(root, "config", "plugins.json")
+	writeCodecPlugin(t, user)
+
+	service := NewLauncherService(Config{
+		PluginRoots:      []string{user},
+		UserPluginRoot:   user,
+		PluginConfigPath: configPath,
+		BuiltinPlugins:   builtinTestPlugins(t),
+	})
+	if err := service.RefreshPlugins(); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := service.InvokePluginAction(PluginActionRequest{
+		PluginID:     "ra-plugin-manager",
+		CapabilityID: "manage",
+		Action:       Action{Type: "plugins.state"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, ok := result.Data.(PluginManagerState)
+	if !ok {
+		t.Fatalf("state data = %#v", result.Data)
+	}
+	if !hasManagedPlugin(state, "codec-tools") {
+		t.Fatalf("missing codec plugin in state: %#v", state.Plugins)
+	}
+
+	result, err = service.InvokePluginAction(PluginActionRequest{
+		PluginID:     "ra-plugin-manager",
+		CapabilityID: "manage",
+		Action: Action{
+			Type: "plugins.setEnabled",
+			Text: mustJSON(t, map[string]any{"id": "codec-tools", "enabled": false}),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, ok = result.Data.(PluginManagerState)
+	if !ok {
+		t.Fatalf("state data = %#v", result.Data)
+	}
+	if got := findManagedPlugin(t, state, "codec-tools"); got.Enabled {
+		t.Fatalf("codec-tools enabled = true")
+	}
+
+	_, err = service.InvokePluginAction(PluginActionRequest{
+		PluginID:     "codec-tools",
+		CapabilityID: "base64",
+		Action:       Action{Type: "plugins.state"},
+	})
+	if err == nil {
+		t.Fatal("expected management permission rejection")
+	}
+}
+
 func TestUninstallPluginOnlyAllowsUserWASMPlugins(t *testing.T) {
 	root := t.TempDir()
 	user := filepath.Join(root, "user")
 	configPath := filepath.Join(root, "config", "plugins.json")
-	writeWASMPlugin(t, user, pluginbundle.Manifest{ID: "codec-tools", Name: "Codec Tools", Version: "0.1.0"}, nil)
+	writeCodecPlugin(t, user)
 
 	service := NewLauncherService(Config{
 		PluginRoots:      []string{user},
@@ -229,11 +284,20 @@ func TestUninstallPluginOnlyAllowsUserWASMPlugins(t *testing.T) {
 	}
 }
 
+func mustJSON(t *testing.T, value any) string {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
 func TestPluginManagerStateIncludesLoadErrorsAndIDConflicts(t *testing.T) {
 	root := t.TempDir()
 	user := filepath.Join(root, "user")
 	configPath := filepath.Join(root, "config", "plugins.json")
-	writeWASMPlugin(t, user, pluginbundle.Manifest{ID: "ra-app-launcher", Name: "Fake Apps", Version: "0.1.0"}, nil)
+	writeFakeAppLauncherPlugin(t, user)
 	if err := os.WriteFile(filepath.Join(user, "bad.wasm"), []byte("bad"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +319,7 @@ func TestPluginManagerStateIncludesLoadErrorsAndIDConflicts(t *testing.T) {
 	if !hasLoadError(state, "id conflict") {
 		t.Fatalf("missing conflict error: %#v", state.LoadErrors)
 	}
-	if !hasLoadError(state, "invalid wasm") {
+	if !hasLoadError(state, "invalid magic number") {
 		t.Fatalf("missing wasm error: %#v", state.LoadErrors)
 	}
 }
@@ -298,15 +362,4 @@ func hasLoadError(state PluginManagerState, needle string) bool {
 		}
 	}
 	return false
-}
-
-func writeWASMFile(t *testing.T, path string, manifest pluginbundle.Manifest, capabilities []pluginbundle.Capability) {
-	t.Helper()
-	raw := mustBundle(t, manifest, capabilities)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, raw, 0o644); err != nil {
-		t.Fatal(err)
-	}
 }

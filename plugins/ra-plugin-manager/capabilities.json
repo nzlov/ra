@@ -1,9 +1,0 @@
-[
-  {
-    "id": "manage",
-    "title": "Plugin Manager",
-    "icon": "/icons/plugins.svg",
-    "ui": "/manager/index.html",
-    "keywords": ["plugin", "plugins", "manager", "install", "enable", "disable"]
-  }
-]
