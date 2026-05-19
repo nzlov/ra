@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Example Webview Plugin</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        background: #15171a;
+        color: #f4f5f6;
+      }
+
+      body {
+        margin: 0;
+        padding: 24px;
+      }
+
+      main {
+        display: grid;
+        gap: 14px;
+        max-width: 560px;
+      }
+
+      button {
+        width: fit-content;
+        border: 1px solid #3a414a;
+        border-radius: 6px;
+        background: #23282f;
+        color: #f4f5f6;
+        padding: 8px 12px;
+      }
+
+      output {
+        color: #86efac;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Example Webview Plugin</h1>
+      <p>This page is loaded from a plugin package. Its JavaScript can load a local WASM module when one is built.</p>
+      <button id="run" type="button">Run plugin script</button>
+      <output id="status">idle</output>
+    </main>
+    <script type="module" src="./plugin.js"></script>
+  </body>
+</html>

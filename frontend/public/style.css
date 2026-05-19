@@ -1,0 +1,168 @@
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-weight: 400;
+  src: url("./Inter-Medium.ttf") format("truetype");
+}
+
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  color: #eef1f5;
+  background: #101214;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 420px;
+  min-height: 100vh;
+  background: #101214;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.launcher {
+  display: grid;
+  min-height: 100vh;
+  place-items: start center;
+  padding: 11vh 18px 18px;
+}
+
+.surface {
+  width: min(760px, 100%);
+  overflow: hidden;
+  border: 1px solid #2d343c;
+  border-radius: 8px;
+  background: #181b1f;
+  box-shadow: 0 20px 60px rgb(0 0 0 / 38%);
+}
+
+.search-row {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid #2d343c;
+  padding: 14px;
+}
+
+.mark {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 7px;
+  background: #2f6f4e;
+  color: #f2fff7;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #f7f9fb;
+  font-size: 20px;
+}
+
+input::placeholder {
+  color: #78828e;
+}
+
+.results {
+  display: grid;
+  max-height: 430px;
+  overflow: auto;
+  padding: 8px;
+}
+
+.results button {
+  display: grid;
+  grid-template-columns: 86px 1fr;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  min-height: 58px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #eef1f5;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.results button.active,
+.results button:hover {
+  background: #23282f;
+}
+
+.kind {
+  display: inline-grid;
+  min-width: 72px;
+  height: 26px;
+  place-items: center;
+  border: 1px solid #3a444f;
+  border-radius: 6px;
+  color: #aab4c0;
+  font-size: 12px;
+}
+
+.text {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+strong,
+small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+strong {
+  color: #fbfcfd;
+  font-size: 15px;
+}
+
+small {
+  color: #95a0ad;
+  font-size: 12px;
+}
+
+footer {
+  border-top: 1px solid #2d343c;
+  color: #87919d;
+  font-size: 12px;
+  padding: 8px 14px 10px;
+}
+
+@media (max-width: 520px) {
+  body {
+    min-width: 320px;
+  }
+
+  .launcher {
+    padding-top: 6vh;
+  }
+
+  .results button {
+    grid-template-columns: 70px 1fr;
+  }
+
+  input {
+    font-size: 16px;
+  }
+}

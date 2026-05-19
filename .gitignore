@@ -1,0 +1,8 @@
+/.task/
+/bin/
+/build/icon.ico
+/build/icons.icns
+/frontend/dist/
+/frontend/node_modules/
+
+*.log

@@ -1,0 +1,71 @@
+# RA Plugin Contract
+
+RA currently supports a minimal local plugin package format. Plugins live under `plugins/<plugin-id>/` while the MVP is under development.
+
+## Package Layout
+
+```text
+plugins/example-webview/
+  manifest.json
+  index.html
+  plugin.js
+  plugin.wasm
+```
+
+`plugin.wasm` is optional for page plugins. The page can load it with standard browser WebAssembly APIs.
+
+## Manifest
+
+```json
+{
+  "id": "example-webview",
+  "name": "Example Webview",
+  "type": "webview",
+  "entry": "index.html",
+  "permissions": ["clipboard:write"],
+  "commands": [
+    {
+      "id": "open",
+      "title": "Open Example Plugin",
+      "subtitle": "HTML page with a WASM slot"
+    }
+  ]
+}
+```
+
+Rules:
+
+- `id` and command IDs must match `^[a-z0-9][a-z0-9-_.]*$`.
+- `type` is `webview` or `command`.
+- `entry` must be a relative path inside the plugin directory.
+- `commands` are surfaced in the launcher search results.
+
+## Runtime Behavior
+
+When a `webview` command is selected, RA returns a `plugin.open` action result with a `file://` URL for the plugin entry page. The frontend opens that URL in a new browser/webview target.
+
+Calculator results use `clipboard.write`; on Linux RA writes through `wl-copy` when available, then falls back to `xclip -selection clipboard`.
+
+Command plugins run a WASM module through `wazero`. The current command ABI is intentionally tiny: the selected command names a no-argument export that returns one `i32`. RA displays that integer result and copies it when clipboard support is available.
+
+```json
+{
+  "id": "answer-command",
+  "name": "Answer Command",
+  "type": "command",
+  "entry": "answer.wasm",
+  "permissions": ["clipboard:write"],
+  "commands": [
+    {
+      "id": "answer",
+      "title": "Run Answer WASM",
+      "subtitle": "Returns 42 and copies it",
+      "export": "answer"
+    }
+  ]
+}
+```
+
+## MVP Boundary
+
+The current command WASM ABI only supports `() -> i32`. The intended next step is to add explicit host functions for clipboard, storage, app launch, and structured UI result generation.
