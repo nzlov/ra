@@ -436,12 +436,12 @@ tasks:
     deps:
       - task: install:frontend:deps
     cmds:
-      - npm run dev -- --port {{.VITE_PORT}} --strictPort
+      - npm run dev -- --host 127.0.0.1 --port {{.VITE_PORT}} --strictPort
 
   dev:
     summary: Runs the application in development mode
     cmds:
-      - wails3 dev -config ./build/devmode.config.yaml -port {{.VITE_PORT}}
+      - wails3 dev -config ./build/config.yml -port {{.VITE_PORT}}
 
   dev:reload:
     summary: Reloads the application

@@ -8,7 +8,11 @@ export {
 
 export {
     Action,
+    InstallPluginResult,
     InvokeResult,
+    ManagedLoadError,
+    ManagedPlugin,
+    PluginManagerState,
     Result,
     Status
 } from "./models.js";

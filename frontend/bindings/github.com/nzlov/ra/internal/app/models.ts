@@ -33,6 +33,39 @@ export class Action {
     }
 }
 
+export class InstallPluginResult {
+    "pluginId": string;
+    "installedPath": string;
+    "state": PluginManagerState;
+
+    /** Creates a new InstallPluginResult instance. */
+    constructor($$source: Partial<InstallPluginResult> = {}) {
+        if (!("pluginId" in $$source)) {
+            this["pluginId"] = "";
+        }
+        if (!("installedPath" in $$source)) {
+            this["installedPath"] = "";
+        }
+        if (!("state" in $$source)) {
+            this["state"] = (new PluginManagerState());
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new InstallPluginResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): InstallPluginResult {
+        const $$createField2_0 = $$createType0;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("state" in $$parsedSource) {
+            $$parsedSource["state"] = $$createField2_0($$parsedSource["state"]);
+        }
+        return new InstallPluginResult($$parsedSource as Partial<InstallPluginResult>);
+    }
+}
+
 export class InvokeResult {
     "type": string;
     "message": string;
@@ -57,6 +90,133 @@ export class InvokeResult {
     static createFrom($$source: any = {}): InvokeResult {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new InvokeResult($$parsedSource as Partial<InvokeResult>);
+    }
+}
+
+export class ManagedLoadError {
+    "path": string;
+    "error": string;
+
+    /** Creates a new ManagedLoadError instance. */
+    constructor($$source: Partial<ManagedLoadError> = {}) {
+        if (!("path" in $$source)) {
+            this["path"] = "";
+        }
+        if (!("error" in $$source)) {
+            this["error"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ManagedLoadError instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ManagedLoadError {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ManagedLoadError($$parsedSource as Partial<ManagedLoadError>);
+    }
+}
+
+export class ManagedPlugin {
+    "id": string;
+    "name": string;
+    "type": string;
+    "source": string;
+    "dir": string;
+    "entryPath": string;
+    "enabled": boolean;
+    "protected": boolean;
+    "uninstallable": boolean;
+
+    /** Creates a new ManagedPlugin instance. */
+    constructor($$source: Partial<ManagedPlugin> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = "";
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("type" in $$source)) {
+            this["type"] = "";
+        }
+        if (!("source" in $$source)) {
+            this["source"] = "";
+        }
+        if (!("dir" in $$source)) {
+            this["dir"] = "";
+        }
+        if (!("entryPath" in $$source)) {
+            this["entryPath"] = "";
+        }
+        if (!("enabled" in $$source)) {
+            this["enabled"] = false;
+        }
+        if (!("protected" in $$source)) {
+            this["protected"] = false;
+        }
+        if (!("uninstallable" in $$source)) {
+            this["uninstallable"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ManagedPlugin instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ManagedPlugin {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ManagedPlugin($$parsedSource as Partial<ManagedPlugin>);
+    }
+}
+
+export class PluginManagerState {
+    "plugins": ManagedPlugin[];
+    "loadErrors": ManagedLoadError[];
+    "pluginRoots": string[];
+    "userPluginRoot": string;
+    "pluginConfigPath": string;
+
+    /** Creates a new PluginManagerState instance. */
+    constructor($$source: Partial<PluginManagerState> = {}) {
+        if (!("plugins" in $$source)) {
+            this["plugins"] = [];
+        }
+        if (!("loadErrors" in $$source)) {
+            this["loadErrors"] = [];
+        }
+        if (!("pluginRoots" in $$source)) {
+            this["pluginRoots"] = [];
+        }
+        if (!("userPluginRoot" in $$source)) {
+            this["userPluginRoot"] = "";
+        }
+        if (!("pluginConfigPath" in $$source)) {
+            this["pluginConfigPath"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PluginManagerState instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PluginManagerState {
+        const $$createField0_0 = $$createType2;
+        const $$createField1_0 = $$createType4;
+        const $$createField2_0 = $$createType5;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("plugins" in $$parsedSource) {
+            $$parsedSource["plugins"] = $$createField0_0($$parsedSource["plugins"]);
+        }
+        if ("loadErrors" in $$parsedSource) {
+            $$parsedSource["loadErrors"] = $$createField1_0($$parsedSource["loadErrors"]);
+        }
+        if ("pluginRoots" in $$parsedSource) {
+            $$parsedSource["pluginRoots"] = $$createField2_0($$parsedSource["pluginRoots"]);
+        }
+        return new PluginManagerState($$parsedSource as Partial<PluginManagerState>);
     }
 }
 
@@ -92,7 +252,7 @@ export class Result {
      * Creates a new Result instance from a string or object.
      */
     static createFrom($$source: any = {}): Result {
-        const $$createField4_0 = $$createType0;
+        const $$createField4_0 = $$createType6;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("action" in $$parsedSource) {
             $$parsedSource["action"] = $$createField4_0($$parsedSource["action"]);
@@ -129,7 +289,7 @@ export class Status {
      * Creates a new Status instance from a string or object.
      */
     static createFrom($$source: any = {}): Status {
-        const $$createField3_0 = $$createType1;
+        const $$createField3_0 = $$createType5;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("pluginRoots" in $$parsedSource) {
             $$parsedSource["pluginRoots"] = $$createField3_0($$parsedSource["pluginRoots"]);
@@ -139,5 +299,10 @@ export class Status {
 }
 
 // Private type creation functions
-const $$createType0 = Action.createFrom;
-const $$createType1 = $Create.Array($Create.Any);
+const $$createType0 = PluginManagerState.createFrom;
+const $$createType1 = ManagedPlugin.createFrom;
+const $$createType2 = $Create.Array($$createType1);
+const $$createType3 = ManagedLoadError.createFrom;
+const $$createType4 = $Create.Array($$createType3);
+const $$createType5 = $Create.Array($Create.Any);
+const $$createType6 = Action.createFrom;

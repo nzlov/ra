@@ -13,9 +13,21 @@ import * as desktop$0 from "../desktop/models.js";
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
+export function InstallPlugin(sourceDir: string): $CancellablePromise<$models.InstallPluginResult> {
+    return $Call.ByID(3785730508, sourceDir).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
 export function Invoke(action: $models.Action): $CancellablePromise<$models.InvokeResult> {
     return $Call.ByID(2371333820, action).then(($result: any) => {
-        return $$createType0($result);
+        return $$createType1($result);
+    });
+}
+
+export function PluginManagerState(): $CancellablePromise<$models.PluginManagerState> {
+    return $Call.ByID(1001963371).then(($result: any) => {
+        return $$createType2($result);
     });
 }
 
@@ -29,7 +41,7 @@ export function RefreshPlugins(): $CancellablePromise<void> {
 
 export function Search(query: string): $CancellablePromise<$models.Result[]> {
     return $Call.ByID(611293392, query).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType4($result);
     });
 }
 
@@ -37,14 +49,28 @@ export function SetDesktopEntries(entries: desktop$0.Entry[]): $CancellablePromi
     return $Call.ByID(1609435692, entries);
 }
 
+export function SetPluginEnabled(id: string, enabled: boolean): $CancellablePromise<$models.PluginManagerState> {
+    return $Call.ByID(282791324, id, enabled).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
 export function Status(): $CancellablePromise<$models.Status> {
     return $Call.ByID(520844438).then(($result: any) => {
-        return $$createType3($result);
+        return $$createType5($result);
+    });
+}
+
+export function UninstallPlugin(id: string): $CancellablePromise<$models.PluginManagerState> {
+    return $Call.ByID(1897719121, id).then(($result: any) => {
+        return $$createType2($result);
     });
 }
 
 // Private type creation functions
-const $$createType0 = $models.InvokeResult.createFrom;
-const $$createType1 = $models.Result.createFrom;
-const $$createType2 = $Create.Array($$createType1);
-const $$createType3 = $models.Status.createFrom;
+const $$createType0 = $models.InstallPluginResult.createFrom;
+const $$createType1 = $models.InvokeResult.createFrom;
+const $$createType2 = $models.PluginManagerState.createFrom;
+const $$createType3 = $models.Result.createFrom;
+const $$createType4 = $Create.Array($$createType3);
+const $$createType5 = $models.Status.createFrom;

@@ -2,6 +2,7 @@ package app
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/nzlov/ra/internal/calculator"
 	"github.com/nzlov/ra/internal/desktop"
@@ -9,16 +10,19 @@ import (
 )
 
 type Config struct {
-	PluginRoot  string
-	PluginRoots []string
-	DesktopDirs []string
-	Limit       int
+	PluginRoot       string
+	PluginRoots      []string
+	UserPluginRoot   string
+	PluginConfigPath string
+	DesktopDirs      []string
+	Limit            int
 }
 
 type LauncherService struct {
 	config         Config
 	desktopEntries []desktop.Entry
 	pluginRegistry plugins.Registry
+	pluginConfig   PluginConfig
 	actions        ActionExecutor
 }
 
@@ -64,6 +68,14 @@ func NewLauncherService(config Config) *LauncherService {
 			config.PluginRoots = defaultPluginRoots(home)
 		}
 	}
+	if config.UserPluginRoot == "" {
+		home, _ := os.UserHomeDir()
+		config.UserPluginRoot = defaultUserPluginRoot(home)
+	}
+	if config.PluginConfigPath == "" {
+		home, _ := os.UserHomeDir()
+		config.PluginConfigPath = defaultPluginConfigPath(home)
+	}
 	if config.PluginRoot == "" && len(config.PluginRoots) > 0 {
 		config.PluginRoot = config.PluginRoots[0]
 	}
@@ -93,10 +105,23 @@ func (s *LauncherService) Refresh() error {
 }
 
 func (s *LauncherService) RefreshPlugins() error {
-	registry, err := plugins.LoadRegistries(s.config.PluginRoots)
+	config, err := readPluginConfig(s.config.PluginConfigPath)
 	if err != nil {
 		return err
 	}
+	registry, err := plugins.LoadRegistriesWithSources(pluginRootSources(s.config.PluginRoots, s.config.UserPluginRoot))
+	if err != nil {
+		return err
+	}
+	registry.Plugins = rejectReservedPlugins(registry.Plugins, &registry)
+	registry.Plugins = append(registry.Plugins, builtinPluginManager())
+	for i := range registry.Plugins {
+		registry.Plugins[i].Disabled = containsString(config.Disabled, registry.Plugins[i].ID)
+		if registry.Plugins[i].ID == pluginManagerID {
+			registry.Plugins[i].Disabled = false
+		}
+	}
+	s.pluginConfig = config
 	s.pluginRegistry = registry
 	return nil
 }
@@ -172,7 +197,77 @@ func (s *LauncherService) Status() Status {
 func defaultPluginRoots(home string) []string {
 	roots := []string{"plugins"}
 	if home != "" {
-		roots = append(roots, home+"/.local/share/ra/plugins")
+		roots = append(roots, defaultUserPluginRoot(home))
 	}
 	return roots
+}
+
+func defaultUserPluginRoot(home string) string {
+	if home == "" {
+		return filepath.Join(".local", "share", "ra", "plugins")
+	}
+	return filepath.Join(home, ".local", "share", "ra", "plugins")
+}
+
+func defaultPluginConfigPath(home string) string {
+	if home == "" {
+		return filepath.Join(".config", "ra", "plugins.json")
+	}
+	return filepath.Join(home, ".config", "ra", "plugins.json")
+}
+
+func pluginRootSources(roots []string, userPluginRoot string) []plugins.Root {
+	items := make([]plugins.Root, 0, len(roots))
+	for _, root := range roots {
+		source := "builtin"
+		if samePath(root, userPluginRoot) {
+			source = "user"
+		}
+		items = append(items, plugins.Root{Path: root, Source: source})
+	}
+	return items
+}
+
+func samePath(a string, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	absA, err := filepath.Abs(a)
+	if err != nil {
+		return false
+	}
+	absB, err := filepath.Abs(b)
+	if err != nil {
+		return false
+	}
+	return filepath.Clean(absA) == filepath.Clean(absB)
+}
+
+func builtinPluginManager() plugins.Plugin {
+	return plugins.Plugin{
+		ID:     pluginManagerID,
+		Name:   "RA Plugin Manager",
+		Type:   "manager",
+		Source: "builtin",
+		Commands: []plugins.Command{{
+			ID:       "open",
+			Title:    "Open Plugin Manager",
+			Subtitle: "Install, disable, refresh, and remove RA plugins",
+		}},
+	}
+}
+
+func rejectReservedPlugins(items []plugins.Plugin, registry *plugins.Registry) []plugins.Plugin {
+	filtered := items[:0]
+	for _, plugin := range items {
+		if plugin.ID == pluginManagerID {
+			registry.Errors = append(registry.Errors, plugins.LoadError{
+				Path:  plugin.Dir,
+				Error: "id conflict for reserved plugin id \"ra-plugin-manager\"",
+			})
+			continue
+		}
+		filtered = append(filtered, plugin)
+	}
+	return filtered
 }

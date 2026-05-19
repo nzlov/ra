@@ -30,6 +30,15 @@ input {
   font: inherit;
 }
 
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .launcher {
   display: grid;
   min-height: 100vh;
@@ -156,6 +165,146 @@ footer {
   color: #fbbf24;
 }
 
+.manager-surface {
+  width: min(920px, 100%);
+}
+
+.manager-header {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  border-bottom: 1px solid #2d343c;
+  padding: 12px;
+}
+
+.manager-title {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.icon-button,
+.command-button,
+.danger-button {
+  min-height: 36px;
+  border: 1px solid #3a444f;
+  border-radius: 7px;
+  background: #20252b;
+  color: #eef1f5;
+  padding: 0 12px;
+}
+
+.icon-button {
+  width: 36px;
+  padding: 0;
+  font-size: 18px;
+}
+
+.command-button:hover,
+.icon-button:hover {
+  background: #2b3138;
+}
+
+.danger-button {
+  border-color: #5d3538;
+  background: #2b2022;
+  color: #fecaca;
+}
+
+.danger-button:not(:disabled):hover {
+  background: #3a2629;
+}
+
+.manager-list {
+  display: grid;
+  max-height: 540px;
+  overflow: auto;
+  gap: 8px;
+  padding: 8px;
+}
+
+.plugin-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 68px;
+  border: 1px solid #2d343c;
+  border-radius: 7px;
+  background: #1b1f24;
+  padding: 10px;
+}
+
+.plugin-row.disabled {
+  background: #171a1e;
+}
+
+.plugin-main {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+}
+
+.plugin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.switch {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #3a444f;
+  border-radius: 7px;
+  color: #cbd5df;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.switch input {
+  width: 16px;
+  height: 16px;
+  accent-color: #2f9e68;
+}
+
+.locked {
+  display: inline-grid;
+  min-height: 36px;
+  place-items: center;
+  border: 1px solid #3a444f;
+  border-radius: 7px;
+  color: #9aa5b1;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.error-list {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #594529;
+  border-radius: 7px;
+  background: #211d18;
+  padding: 10px;
+}
+
+.error-row {
+  display: grid;
+  gap: 3px;
+  border-top: 1px solid #3b3023;
+  padding-top: 8px;
+}
+
+.error-row span {
+  color: #fbbf24;
+  font-size: 12px;
+}
+
 @media (max-width: 520px) {
   body {
     min-width: 320px;
@@ -167,6 +316,30 @@ footer {
 
   .results button {
     grid-template-columns: 70px 1fr;
+  }
+
+  .manager-header {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .command-button {
+    width: 100%;
+  }
+
+  .plugin-row,
+  .plugin-main {
+    grid-template-columns: 1fr;
+  }
+
+  .plugin-actions {
+    justify-content: stretch;
+  }
+
+  .switch,
+  .danger-button,
+  .locked {
+    flex: 1 1 auto;
+    justify-content: center;
   }
 
   input {

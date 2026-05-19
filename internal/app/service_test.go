@@ -75,7 +75,7 @@ func TestRefreshPluginsLoadsMultiplePluginRootsAndStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	status := service.Status()
-	if status.PluginCount != 2 {
+	if status.PluginCount != 3 {
 		t.Fatalf("PluginCount = %d", status.PluginCount)
 	}
 	if status.PluginErrorCount != 0 {

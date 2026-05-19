@@ -2,6 +2,8 @@
 
 RA currently supports a minimal local plugin package format. Built-in development plugins live under `plugins/<plugin-id>/`; user plugins live under `~/.local/share/ra/plugins/<plugin-id>/`.
 
+The built-in `ra-plugin-manager` entry appears in launcher search results as a protected plugin. It opens the plugin management view and talks to RA through controlled service APIs instead of manipulating files from plugin page JavaScript.
+
 ## Package Layout
 
 ```text
@@ -65,6 +67,24 @@ Command plugins run a WASM module through `wazero`. The current command ABI is i
   ]
 }
 ```
+
+## Plugin Management
+
+The built-in plugin manager supports:
+
+- Listing built-in plugins, user plugins, and load failures.
+- Enabling or disabling plugins by writing `~/.config/ra/plugins.json`.
+- Installing from a selected local plugin directory into `~/.local/share/ra/plugins/<plugin-id>`.
+- Uninstalling user plugins by deleting their user plugin directory.
+- Refreshing the registry after management actions.
+
+Boundaries:
+
+- Remote plugin markets are not supported yet.
+- Plugin ID conflicts are rejected; install never overwrites an existing plugin.
+- Built-in plugins cannot be uninstalled.
+- `ra-plugin-manager` cannot be disabled, uninstalled, or replaced by an external plugin package.
+- External manifests may declare `webview` or `command`; `manager` is reserved for RA itself.
 
 ## MVP Boundary
 

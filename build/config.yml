@@ -1,0 +1,41 @@
+# This file contains the Wails v3 development-mode configuration for RA.
+version: '3'
+
+info:
+  companyName: "RA"
+  productName: "RA"
+  productIdentifier: "com.nzlov.ra"
+  description: "Linux-first launcher with HTML/WASM plugins"
+  copyright: "(c) 2026, RA contributors"
+  comments: "RA launcher"
+  version: "0.0.1"
+
+dev_mode:
+  root_path: .
+  log_level: warn
+  debounce: 1000
+  ignore:
+    dir:
+      - .git
+      - node_modules
+      - frontend
+      - bin
+    file:
+      - .DS_Store
+      - .gitignore
+    watched_extension:
+      - "*.go"
+    git_ignore: true
+  executes:
+    - cmd: wails3 task install:frontend:deps
+      type: once
+    - cmd: wails3 task dev:frontend
+      type: background
+    - cmd: wails3 task build
+      type: blocking
+    - cmd: wails3 task run
+      type: primary
+
+fileAssociations:
+
+other:

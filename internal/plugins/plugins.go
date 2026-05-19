@@ -17,15 +17,22 @@ type Registry struct {
 	Errors  []LoadError
 }
 
+type Root struct {
+	Path   string
+	Source string
+}
+
 type Plugin struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	Type        string     `json:"type"`
-	Entry       string     `json:"entry"`
-	Permissions []string   `json:"permissions,omitempty"`
-	Commands    []Command  `json:"commands,omitempty"`
-	Dir         string     `json:"-"`
-	EntryPath   string     `json:"-"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Type        string    `json:"type"`
+	Entry       string    `json:"entry"`
+	Permissions []string  `json:"permissions,omitempty"`
+	Commands    []Command `json:"commands,omitempty"`
+	Source      string    `json:"source,omitempty"`
+	Dir         string    `json:"-"`
+	EntryPath   string    `json:"-"`
+	Disabled    bool      `json:"-"`
 }
 
 type Command struct {
@@ -63,20 +70,41 @@ func LoadRegistry(root string) (Registry, error) {
 }
 
 func LoadRegistries(roots []string) (Registry, error) {
-	registry := Registry{Roots: append([]string(nil), roots...)}
+	items := make([]Root, 0, len(roots))
+	for i, root := range roots {
+		source := "builtin"
+		if i > 0 {
+			source = "user"
+		}
+		items = append(items, Root{Path: root, Source: source})
+	}
+	return LoadRegistriesWithSources(items)
+}
+
+func LoadRegistriesWithSources(roots []Root) (Registry, error) {
+	rootPaths := make([]string, 0, len(roots))
+	for _, root := range roots {
+		rootPaths = append(rootPaths, root.Path)
+	}
+	registry := Registry{Roots: rootPaths}
 	if len(roots) == 1 {
-		registry.Root = roots[0]
+		registry.Root = roots[0].Path
 	}
 	seen := map[string]struct{}{}
+	seenPlugins := map[string]string{}
 	for _, root := range roots {
-		if root == "" {
+		if root.Path == "" {
 			continue
 		}
-		if _, ok := seen[root]; ok {
+		if _, ok := seen[root.Path]; ok {
 			continue
 		}
-		seen[root] = struct{}{}
-		if err := loadRoot(root, &registry); err != nil {
+		seen[root.Path] = struct{}{}
+		source := root.Source
+		if source == "" {
+			source = "builtin"
+		}
+		if err := loadRoot(root.Path, source, &registry, seenPlugins); err != nil {
 			return registry, err
 		}
 	}
@@ -87,7 +115,7 @@ func LoadRegistries(roots []string) (Registry, error) {
 	return registry, nil
 }
 
-func loadRoot(root string, registry *Registry) error {
+func loadRoot(root string, source string, registry *Registry, seenPlugins map[string]string) error {
 	items, err := os.ReadDir(root)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -106,6 +134,15 @@ func loadRoot(root string, registry *Registry) error {
 			registry.Errors = append(registry.Errors, LoadError{Path: pluginDir, Error: err.Error()})
 			continue
 		}
+		if firstPath, ok := seenPlugins[plugin.ID]; ok {
+			registry.Errors = append(registry.Errors, LoadError{
+				Path:  pluginDir,
+				Error: fmt.Sprintf("id conflict for %q: already loaded from %s", plugin.ID, firstPath),
+			})
+			continue
+		}
+		seenPlugins[plugin.ID] = pluginDir
+		plugin.Source = source
 		registry.Plugins = append(registry.Plugins, plugin)
 	}
 	return nil
@@ -115,6 +152,9 @@ func (r Registry) Search(query string, limit int) []Result {
 	query = strings.ToLower(strings.TrimSpace(query))
 	var results []Result
 	for _, plugin := range r.Plugins {
+		if plugin.Disabled {
+			continue
+		}
 		for _, command := range plugin.Commands {
 			text := strings.ToLower(plugin.Name + " " + command.Title + " " + command.Subtitle)
 			if query != "" && !strings.Contains(text, query) {
@@ -123,6 +163,8 @@ func (r Registry) Search(query string, limit int) []Result {
 			actionType := "plugin.open"
 			if plugin.Type == "command" {
 				actionType = "plugin.run"
+			} else if plugin.Type == "manager" {
+				actionType = "plugin.manage"
 			}
 			results = append(results, Result{
 				ID:       "plugin:" + plugin.ID + ":" + command.ID,
@@ -146,6 +188,10 @@ func (r Registry) Search(query string, limit int) []Result {
 }
 
 func loadPlugin(dir string) (Plugin, error) {
+	return LoadPluginPackage(dir)
+}
+
+func LoadPluginPackage(dir string) (Plugin, error) {
 	raw, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
 	if err != nil {
 		return Plugin{}, err
