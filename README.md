@@ -5,7 +5,7 @@ RA is a Linux-first launcher prototype built with Go and Wails v3. It aims for a
 ## Current MVP
 
 - Scans `.desktop` files from `/usr/share/applications` and `~/.local/share/applications`.
-- Searches launchable desktop apps and starts them through their sanitized `Exec` command.
+- Provides app search and launch through the built-in `ra-app-launcher` plugin.
 - Supports calculator queries with `=`, for example `=6*7`.
 - Loads local plugin manifests from `plugins/*/manifest.json`.
 - Also loads user plugins from `~/.local/share/ra/plugins`.
@@ -50,7 +50,7 @@ See `docs/plugins.md` for the current local plugin contract. RA can open webview
 
 Development plugins can stay in the repository `plugins/` directory. User-installed plugins should live under `~/.local/share/ra/plugins/<plugin-id>/`.
 
-Plugin enable/disable state is stored in `~/.config/ra/plugins.json`. The plugin manager can disable built-in plugins, but it only uninstalls user plugins and refuses to disable or uninstall itself.
+Plugin enable/disable state is stored in `~/.config/ra/plugins.json`. The plugin manager can disable built-in plugins such as `ra-app-launcher`, but it only uninstalls user plugins and refuses to disable or uninstall itself.
 
 ## Next Steps
 

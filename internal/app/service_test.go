@@ -42,6 +42,9 @@ func TestSearchMergesCalculatorAppsAndPlugins(t *testing.T) {
 	if len(apps) != 1 || apps[0].Kind != "app" || apps[0].Title != "Firefox" {
 		t.Fatalf("app results = %#v", apps)
 	}
+	if apps[0].Action.PluginID != "ra-app-launcher" {
+		t.Fatalf("app PluginID = %q", apps[0].Action.PluginID)
+	}
 
 	pluginResults := service.Search("example")
 	if len(pluginResults) != 1 || pluginResults[0].Kind != "plugin" {
@@ -75,11 +78,48 @@ func TestRefreshPluginsLoadsMultiplePluginRootsAndStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	status := service.Status()
-	if status.PluginCount != 3 {
+	if status.PluginCount != 4 {
 		t.Fatalf("PluginCount = %d", status.PluginCount)
 	}
 	if status.PluginErrorCount != 0 {
 		t.Fatalf("PluginErrorCount = %d", status.PluginErrorCount)
+	}
+}
+
+func TestDisablingBuiltinAppLauncherRemovesAppSearchResults(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	configPath := filepath.Join(root, "config", "plugins.json")
+
+	service := NewLauncherService(Config{
+		PluginRoots:      []string{builtin, user},
+		UserPluginRoot:   user,
+		PluginConfigPath: configPath,
+	})
+	service.SetDesktopEntries([]desktop.Entry{{ID: "firefox", Name: "Firefox", Exec: "firefox %U"}})
+	if err := service.RefreshPlugins(); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := service.SetPluginEnabled("ra-app-launcher", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appLauncher := findManagedPlugin(t, state, "ra-app-launcher")
+	if appLauncher.Enabled {
+		t.Fatalf("ra-app-launcher enabled = true")
+	}
+	if appLauncher.Protected {
+		t.Fatalf("ra-app-launcher protected = true")
+	}
+	if appLauncher.Uninstallable {
+		t.Fatalf("ra-app-launcher uninstallable = true")
+	}
+
+	results := service.Search("fire")
+	if len(results) != 0 {
+		t.Fatalf("disabled app launcher results = %#v", results)
 	}
 }
 

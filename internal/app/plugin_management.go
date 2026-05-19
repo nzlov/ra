@@ -12,7 +12,10 @@ import (
 	"github.com/nzlov/ra/internal/plugins"
 )
 
-const pluginManagerID = "ra-plugin-manager"
+const (
+	pluginManagerID     = "ra-plugin-manager"
+	appLauncherPluginID = "ra-app-launcher"
+)
 
 type ManagedPlugin struct {
 	ID            string `json:"id"`
@@ -104,8 +107,8 @@ func (s *LauncherService) InstallPlugin(sourceDir string) (InstallPluginResult, 
 	if err != nil {
 		return InstallPluginResult{State: s.PluginManagerState()}, fmt.Errorf("read plugin package: %w", err)
 	}
-	if plugin.ID == pluginManagerID {
-		return InstallPluginResult{State: s.PluginManagerState()}, errors.New("plugin manager cannot be installed from a user package")
+	if isBuiltinPluginID(plugin.ID) {
+		return InstallPluginResult{State: s.PluginManagerState()}, fmt.Errorf("built-in plugin %q cannot be installed from a user package", plugin.ID)
 	}
 	if _, ok := s.findPlugin(plugin.ID); ok {
 		return InstallPluginResult{State: s.PluginManagerState()}, fmt.Errorf("plugin id conflict: %q already exists", plugin.ID)

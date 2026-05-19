@@ -4,6 +4,8 @@ RA currently supports a minimal local plugin package format. Built-in developmen
 
 The built-in `ra-plugin-manager` entry appears in launcher search results as a protected plugin. It opens the plugin management view and talks to RA through controlled service APIs instead of manipulating files from plugin page JavaScript.
 
+The built-in `ra-app-launcher` plugin provides desktop app search and launch. It is not protected, so it can be disabled in the plugin manager, but it cannot be uninstalled because it is built into RA.
+
 ## Package Layout
 
 ```text
@@ -84,7 +86,8 @@ Boundaries:
 - Plugin ID conflicts are rejected; install never overwrites an existing plugin.
 - Built-in plugins cannot be uninstalled.
 - `ra-plugin-manager` cannot be disabled, uninstalled, or replaced by an external plugin package.
-- External manifests may declare `webview` or `command`; `manager` is reserved for RA itself.
+- `ra-app-launcher` can be disabled, but external plugin packages cannot replace its built-in ID.
+- External manifests may declare `webview` or `command`; `manager` and `app` are reserved for RA itself.
 
 ## MVP Boundary
 

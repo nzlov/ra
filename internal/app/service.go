@@ -114,7 +114,7 @@ func (s *LauncherService) RefreshPlugins() error {
 		return err
 	}
 	registry.Plugins = rejectReservedPlugins(registry.Plugins, &registry)
-	registry.Plugins = append(registry.Plugins, builtinPluginManager())
+	registry.Plugins = append(registry.Plugins, builtinAppLauncher(), builtinPluginManager())
 	for i := range registry.Plugins {
 		registry.Plugins[i].Disabled = containsString(config.Disabled, registry.Plugins[i].ID)
 		if registry.Plugins[i].ID == pluginManagerID {
@@ -145,18 +145,21 @@ func (s *LauncherService) Search(query string) []Result {
 	}
 
 	results := make([]Result, 0, s.config.Limit)
-	for _, entry := range desktop.Search(s.desktopEntries, query, s.config.Limit) {
-		results = append(results, Result{
-			ID:       "app:" + entry.ID,
-			Title:    entry.Name,
-			Subtitle: entry.Comment,
-			Kind:     "app",
-			Action: Action{
-				Type:    "app.launch",
-				AppID:   entry.ID,
-				Command: entry.LaunchCommand(),
-			},
-		})
+	if s.pluginEnabled(appLauncherPluginID) {
+		for _, entry := range desktop.Search(s.desktopEntries, query, s.config.Limit) {
+			results = append(results, Result{
+				ID:       "app:" + entry.ID,
+				Title:    entry.Name,
+				Subtitle: entry.Comment,
+				Kind:     "app",
+				Action: Action{
+					Type:     "app.launch",
+					AppID:    entry.ID,
+					Command:  entry.LaunchCommand(),
+					PluginID: appLauncherPluginID,
+				},
+			})
+		}
 	}
 
 	remaining := s.config.Limit - len(results)
@@ -243,6 +246,20 @@ func samePath(a string, b string) bool {
 	return filepath.Clean(absA) == filepath.Clean(absB)
 }
 
+func (s *LauncherService) pluginEnabled(id string) bool {
+	plugin, ok := s.findPlugin(id)
+	return ok && !plugin.Disabled
+}
+
+func builtinAppLauncher() plugins.Plugin {
+	return plugins.Plugin{
+		ID:     appLauncherPluginID,
+		Name:   "RA App Launcher",
+		Type:   "app",
+		Source: "builtin",
+	}
+}
+
 func builtinPluginManager() plugins.Plugin {
 	return plugins.Plugin{
 		ID:     pluginManagerID,
@@ -260,14 +277,18 @@ func builtinPluginManager() plugins.Plugin {
 func rejectReservedPlugins(items []plugins.Plugin, registry *plugins.Registry) []plugins.Plugin {
 	filtered := items[:0]
 	for _, plugin := range items {
-		if plugin.ID == pluginManagerID {
+		if isBuiltinPluginID(plugin.ID) {
 			registry.Errors = append(registry.Errors, plugins.LoadError{
 				Path:  plugin.Dir,
-				Error: "id conflict for reserved plugin id \"ra-plugin-manager\"",
+				Error: "id conflict for reserved plugin id \"" + plugin.ID + "\"",
 			})
 			continue
 		}
 		filtered = append(filtered, plugin)
 	}
 	return filtered
+}
+
+func isBuiltinPluginID(id string) bool {
+	return id == pluginManagerID || id == appLauncherPluginID
 }

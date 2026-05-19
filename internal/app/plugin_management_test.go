@@ -148,6 +148,22 @@ func TestInstallPluginRejectsExternalManagerType(t *testing.T) {
 	}
 }
 
+func TestInstallPluginRejectsBuiltinAppLauncherID(t *testing.T) {
+	root := t.TempDir()
+	user := filepath.Join(root, "user")
+	source := filepath.Join(root, "source", "ra-app-launcher")
+	writeManagedWebPlugin(t, filepath.Dir(source), "ra-app-launcher", "Fake App Launcher")
+
+	service := NewLauncherService(Config{UserPluginRoot: user})
+
+	if _, err := service.InstallPlugin(source); err == nil {
+		t.Fatal("expected built-in app launcher ID install to fail")
+	}
+	if _, err := os.Stat(filepath.Join(user, "ra-app-launcher")); !os.IsNotExist(err) {
+		t.Fatalf("reserved plugin was copied: %v", err)
+	}
+}
+
 func TestUserPluginSourceUsesConfiguredUserRoot(t *testing.T) {
 	root := t.TempDir()
 	builtin := filepath.Join(root, "builtin")
@@ -266,11 +282,41 @@ func TestExternalPluginCannotUsePluginManagerID(t *testing.T) {
 	}
 
 	state := service.PluginManagerState()
-	if len(state.Plugins) != 1 {
+	if len(state.Plugins) != 2 {
 		t.Fatalf("len(Plugins) = %d: %#v", len(state.Plugins), state.Plugins)
 	}
-	if state.Plugins[0].ID != "ra-plugin-manager" || state.Plugins[0].Type != "manager" {
-		t.Fatalf("manager plugin = %#v", state.Plugins[0])
+	manager := findManagedPlugin(t, state, "ra-plugin-manager")
+	if manager.Type != "manager" {
+		t.Fatalf("manager plugin = %#v", manager)
+	}
+	if !hasLoadError(state, "reserved plugin id") {
+		t.Fatalf("missing reserved id error: %#v", state.LoadErrors)
+	}
+}
+
+func TestExternalPluginCannotUseAppLauncherID(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	configPath := filepath.Join(root, "config", "plugins.json")
+	writeManagedWebPlugin(t, user, "ra-app-launcher", "Fake App Launcher")
+
+	service := NewLauncherService(Config{
+		PluginRoots:      []string{builtin, user},
+		UserPluginRoot:   user,
+		PluginConfigPath: configPath,
+	})
+	if err := service.RefreshPlugins(); err != nil {
+		t.Fatal(err)
+	}
+
+	state := service.PluginManagerState()
+	appLauncher := findManagedPlugin(t, state, "ra-app-launcher")
+	if appLauncher.Type != "app" || appLauncher.Source != "builtin" {
+		t.Fatalf("app launcher plugin = %#v", appLauncher)
+	}
+	if appLauncher.Protected {
+		t.Fatalf("ra-app-launcher protected = true")
 	}
 	if !hasLoadError(state, "reserved plugin id") {
 		t.Fatalf("missing reserved id error: %#v", state.LoadErrors)
