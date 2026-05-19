@@ -104,6 +104,34 @@ func TestSearchReturnsRunActionForCommandPlugin(t *testing.T) {
 	}
 }
 
+func TestLoadRegistriesMergesPluginDirsAndKeepsErrors(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	writePlugin(t, builtin, "web", `{
+  "id": "builtin-web",
+  "name": "Builtin Web",
+  "type": "webview",
+  "entry": "index.html",
+  "commands": [{"id":"open","title":"Open Builtin"}]
+}`)
+	if err := os.WriteFile(filepath.Join(builtin, "web", "index.html"), []byte("<main></main>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writePlugin(t, user, "bad", `{"id":"Bad ID","name":"Bad","type":"webview","entry":"index.html"}`)
+
+	registry, err := LoadRegistries([]string{builtin, user})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(registry.Plugins) != 1 {
+		t.Fatalf("len(Plugins) = %d", len(registry.Plugins))
+	}
+	if len(registry.Errors) != 1 {
+		t.Fatalf("len(Errors) = %d", len(registry.Errors))
+	}
+}
+
 func writePlugin(t *testing.T, root, dir, manifest string) {
 	t.Helper()
 	pluginDir := filepath.Join(root, dir)

@@ -62,3 +62,38 @@ func TestInvokeReturnsPluginOpenPayload(t *testing.T) {
 		t.Fatalf("EntryPath = %q", result.EntryPath)
 	}
 }
+
+func TestRefreshPluginsLoadsMultiplePluginRootsAndStatus(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	writeWebPlugin(t, builtin, "builtin-web", "Builtin Web")
+	writeWebPlugin(t, user, "user-web", "User Web")
+
+	service := NewLauncherService(Config{PluginRoots: []string{builtin, user}})
+	if err := service.RefreshPlugins(); err != nil {
+		t.Fatal(err)
+	}
+	status := service.Status()
+	if status.PluginCount != 2 {
+		t.Fatalf("PluginCount = %d", status.PluginCount)
+	}
+	if status.PluginErrorCount != 0 {
+		t.Fatalf("PluginErrorCount = %d", status.PluginErrorCount)
+	}
+}
+
+func writeWebPlugin(t *testing.T, root string, id string, name string) {
+	t.Helper()
+	dir := filepath.Join(root, id)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{"id":"` + id + `","name":"` + name + `","type":"webview","entry":"index.html","commands":[{"id":"open","title":"Open ` + name + `"}]}`
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<main></main>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}

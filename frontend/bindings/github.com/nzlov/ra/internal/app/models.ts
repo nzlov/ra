@@ -101,5 +101,43 @@ export class Result {
     }
 }
 
+export class Status {
+    "appCount": number;
+    "pluginCount": number;
+    "pluginErrorCount": number;
+    "pluginRoots": string[];
+
+    /** Creates a new Status instance. */
+    constructor($$source: Partial<Status> = {}) {
+        if (!("appCount" in $$source)) {
+            this["appCount"] = 0;
+        }
+        if (!("pluginCount" in $$source)) {
+            this["pluginCount"] = 0;
+        }
+        if (!("pluginErrorCount" in $$source)) {
+            this["pluginErrorCount"] = 0;
+        }
+        if (!("pluginRoots" in $$source)) {
+            this["pluginRoots"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Status instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Status {
+        const $$createField3_0 = $$createType1;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("pluginRoots" in $$parsedSource) {
+            $$parsedSource["pluginRoots"] = $$createField3_0($$parsedSource["pluginRoots"]);
+        }
+        return new Status($$parsedSource as Partial<Status>);
+    }
+}
+
 // Private type creation functions
 const $$createType0 = Action.createFrom;
+const $$createType1 = $Create.Array($Create.Any);

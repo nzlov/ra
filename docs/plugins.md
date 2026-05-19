@@ -1,6 +1,6 @@
 # RA Plugin Contract
 
-RA currently supports a minimal local plugin package format. Plugins live under `plugins/<plugin-id>/` while the MVP is under development.
+RA currently supports a minimal local plugin package format. Built-in development plugins live under `plugins/<plugin-id>/`; user plugins live under `~/.local/share/ra/plugins/<plugin-id>/`.
 
 ## Package Layout
 

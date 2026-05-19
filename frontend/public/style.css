@@ -143,10 +143,17 @@ small {
 }
 
 footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
   border-top: 1px solid #2d343c;
   color: #87919d;
   font-size: 12px;
   padding: 8px 14px 10px;
+}
+
+.warning {
+  color: #fbbf24;
 }
 
 @media (max-width: 520px) {

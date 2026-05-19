@@ -12,6 +12,7 @@ import (
 
 type Registry struct {
 	Root    string
+	Roots   []string
 	Plugins []Plugin
 	Errors  []LoadError
 }
@@ -58,13 +59,41 @@ type Action struct {
 var validID = regexp.MustCompile(`^[a-z0-9][a-z0-9-_.]*$`)
 
 func LoadRegistry(root string) (Registry, error) {
-	registry := Registry{Root: root}
+	return LoadRegistries([]string{root})
+}
+
+func LoadRegistries(roots []string) (Registry, error) {
+	registry := Registry{Roots: append([]string(nil), roots...)}
+	if len(roots) == 1 {
+		registry.Root = roots[0]
+	}
+	seen := map[string]struct{}{}
+	for _, root := range roots {
+		if root == "" {
+			continue
+		}
+		if _, ok := seen[root]; ok {
+			continue
+		}
+		seen[root] = struct{}{}
+		if err := loadRoot(root, &registry); err != nil {
+			return registry, err
+		}
+	}
+
+	sort.SliceStable(registry.Plugins, func(i, j int) bool {
+		return registry.Plugins[i].Name < registry.Plugins[j].Name
+	})
+	return registry, nil
+}
+
+func loadRoot(root string, registry *Registry) error {
 	items, err := os.ReadDir(root)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return registry, nil
+			return nil
 		}
-		return registry, err
+		return err
 	}
 
 	for _, item := range items {
@@ -79,11 +108,7 @@ func LoadRegistry(root string) (Registry, error) {
 		}
 		registry.Plugins = append(registry.Plugins, plugin)
 	}
-
-	sort.SliceStable(registry.Plugins, func(i, j int) bool {
-		return registry.Plugins[i].Name < registry.Plugins[j].Name
-	})
-	return registry, nil
+	return nil
 }
 
 func (r Registry) Search(query string, limit int) []Result {

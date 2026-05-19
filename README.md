@@ -8,6 +8,7 @@ RA is a Linux-first launcher prototype built with Go and Wails v3. It aims for a
 - Searches launchable desktop apps and starts them through their sanitized `Exec` command.
 - Supports calculator queries with `=`, for example `=6*7`.
 - Loads local plugin manifests from `plugins/*/manifest.json`.
+- Also loads user plugins from `~/.local/share/ra/plugins`.
 - Includes a webview plugin package shape with `index.html`, `plugin.js`, and an optional `plugin.wasm`.
 - Opens webview plugin entries through `file://` URLs returned from the Go service.
 - Writes calculator results to the clipboard through `wl-copy` or `xclip` when available.
@@ -41,7 +42,9 @@ This machine has `CGO_ENABLED=0` in the Go environment. Wails on Linux needs cgo
 
 ## Plugin Format
 
-See `docs/plugins.md` for the current local plugin contract. The first pass discovers plugins and surfaces webview open actions. It does not yet run command WASM modules in Go.
+See `docs/plugins.md` for the current local plugin contract. RA can open webview plugin entries and run narrow command WASM plugins with a `() -> i32` export.
+
+Development plugins can stay in the repository `plugins/` directory. User-installed plugins should live under `~/.local/share/ra/plugins/<plugin-id>/`.
 
 ## Next Steps
 

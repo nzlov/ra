@@ -10,6 +10,7 @@ import (
 
 type Config struct {
 	PluginRoot  string
+	PluginRoots []string
 	DesktopDirs []string
 	Limit       int
 }
@@ -47,9 +48,24 @@ type InvokeResult struct {
 	URL       string `json:"url,omitempty"`
 }
 
+type Status struct {
+	AppCount         int      `json:"appCount"`
+	PluginCount      int      `json:"pluginCount"`
+	PluginErrorCount int      `json:"pluginErrorCount"`
+	PluginRoots      []string `json:"pluginRoots"`
+}
+
 func NewLauncherService(config Config) *LauncherService {
-	if config.PluginRoot == "" {
-		config.PluginRoot = "plugins"
+	if len(config.PluginRoots) == 0 {
+		if config.PluginRoot != "" {
+			config.PluginRoots = []string{config.PluginRoot}
+		} else {
+			home, _ := os.UserHomeDir()
+			config.PluginRoots = defaultPluginRoots(home)
+		}
+	}
+	if config.PluginRoot == "" && len(config.PluginRoots) > 0 {
+		config.PluginRoot = config.PluginRoots[0]
 	}
 	if config.Limit == 0 {
 		config.Limit = 20
@@ -77,7 +93,7 @@ func (s *LauncherService) Refresh() error {
 }
 
 func (s *LauncherService) RefreshPlugins() error {
-	registry, err := plugins.LoadRegistry(s.config.PluginRoot)
+	registry, err := plugins.LoadRegistries(s.config.PluginRoots)
 	if err != nil {
 		return err
 	}
@@ -142,4 +158,21 @@ func (s *LauncherService) Search(query string) []Result {
 
 func (s *LauncherService) Invoke(action Action) (InvokeResult, error) {
 	return s.actions.Invoke(action)
+}
+
+func (s *LauncherService) Status() Status {
+	return Status{
+		AppCount:         len(s.desktopEntries),
+		PluginCount:      len(s.pluginRegistry.Plugins),
+		PluginErrorCount: len(s.pluginRegistry.Errors),
+		PluginRoots:      append([]string(nil), s.config.PluginRoots...),
+	}
+}
+
+func defaultPluginRoots(home string) []string {
+	roots := []string{"plugins"}
+	if home != "" {
+		roots = append(roots, home+"/.local/share/ra/plugins")
+	}
+	return roots
 }

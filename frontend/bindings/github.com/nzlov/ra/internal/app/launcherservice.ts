@@ -46,7 +46,17 @@ export function SetDesktopEntries(entries: desktop$0.Entry[]): Promise<void> & {
     return $resultPromise;
 }
 
+export function Status(): Promise<$models.Status> & { cancel(): void } {
+    let $resultPromise = $Call.ByID(520844438) as any;
+    let $typingPromise = $resultPromise.then(($result) => {
+        return $$createType3($result);
+    }) as any;
+    $typingPromise.cancel = $resultPromise.cancel.bind($resultPromise);
+    return $typingPromise;
+}
+
 // Private type creation functions
 const $$createType0 = $models.InvokeResult.createFrom;
 const $$createType1 = $models.Result.createFrom;
 const $$createType2 = $Create.Array($$createType1);
+const $$createType3 = $models.Status.createFrom;

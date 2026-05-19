@@ -27,6 +27,13 @@
     url?: string;
   };
 
+  type ServiceStatus = {
+    appCount: number;
+    pluginCount: number;
+    pluginErrorCount: number;
+    pluginRoots: string[];
+  };
+
   const fallbackResults: Result[] = [
     {
       id: 'demo:calculator',
@@ -47,6 +54,7 @@
   let query = '';
   let results: Result[] = fallbackResults;
   let status = 'Local preview';
+  let serviceStatus: ServiceStatus | null = null;
   let activeIndex = 0;
   let searchInput: HTMLInputElement;
 
@@ -105,7 +113,16 @@
 
   onMount(() => {
     searchInput?.focus();
+    refreshStatus();
   });
+
+  async function refreshStatus() {
+    try {
+      serviceStatus = await LauncherService.Status();
+    } catch (error) {
+      serviceStatus = null;
+    }
+  }
 
   $: query, search();
 </script>
@@ -144,6 +161,15 @@
       {/each}
     </div>
 
-    <footer>{status}</footer>
+    <footer>
+      <span>{status}</span>
+      {#if serviceStatus}
+        <span>{serviceStatus.appCount} apps</span>
+        <span>{serviceStatus.pluginCount} plugins</span>
+        {#if serviceStatus.pluginErrorCount > 0}
+          <span class="warning">{serviceStatus.pluginErrorCount} plugin errors</span>
+        {/if}
+      {/if}
+    </footer>
   </section>
 </main>
