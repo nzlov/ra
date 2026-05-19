@@ -11,9 +11,9 @@ export class Action {
     "command"?: string;
     "text"?: string;
     "pluginId"?: string;
-    "commandId"?: string;
-    "entryPath"?: string;
-    "export"?: string;
+    "capabilityId"?: string;
+    "ui"?: string;
+    "query"?: string;
 
     /** Creates a new Action instance. */
     constructor($$source: Partial<Action> = {}) {
@@ -69,8 +69,6 @@ export class InstallPluginResult {
 export class InvokeResult {
     "type": string;
     "message": string;
-    "entryPath"?: string;
-    "url"?: string;
 
     /** Creates a new InvokeResult instance. */
     constructor($$source: Partial<InvokeResult> = {}) {
@@ -90,6 +88,51 @@ export class InvokeResult {
     static createFrom($$source: any = {}): InvokeResult {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new InvokeResult($$parsedSource as Partial<InvokeResult>);
+    }
+}
+
+export class ManagedCapability {
+    "id": string;
+    "title": string;
+    "icon": string;
+    "ui": string;
+    "keywords": string[];
+    "enabled": boolean;
+
+    /** Creates a new ManagedCapability instance. */
+    constructor($$source: Partial<ManagedCapability> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = "";
+        }
+        if (!("title" in $$source)) {
+            this["title"] = "";
+        }
+        if (!("icon" in $$source)) {
+            this["icon"] = "";
+        }
+        if (!("ui" in $$source)) {
+            this["ui"] = "";
+        }
+        if (!("keywords" in $$source)) {
+            this["keywords"] = [];
+        }
+        if (!("enabled" in $$source)) {
+            this["enabled"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ManagedCapability instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ManagedCapability {
+        const $$createField4_0 = $$createType1;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("keywords" in $$parsedSource) {
+            $$parsedSource["keywords"] = $$createField4_0($$parsedSource["keywords"]);
+        }
+        return new ManagedCapability($$parsedSource as Partial<ManagedCapability>);
     }
 }
 
@@ -122,9 +165,11 @@ export class ManagedPlugin {
     "id": string;
     "name": string;
     "type": string;
+    "version": string;
     "source": string;
-    "dir": string;
-    "entryPath": string;
+    "path": string;
+    "permissions": string[];
+    "capabilities": ManagedCapability[];
     "enabled": boolean;
     "protected": boolean;
     "uninstallable": boolean;
@@ -140,14 +185,20 @@ export class ManagedPlugin {
         if (!("type" in $$source)) {
             this["type"] = "";
         }
+        if (!("version" in $$source)) {
+            this["version"] = "";
+        }
         if (!("source" in $$source)) {
             this["source"] = "";
         }
-        if (!("dir" in $$source)) {
-            this["dir"] = "";
+        if (!("path" in $$source)) {
+            this["path"] = "";
         }
-        if (!("entryPath" in $$source)) {
-            this["entryPath"] = "";
+        if (!("permissions" in $$source)) {
+            this["permissions"] = [];
+        }
+        if (!("capabilities" in $$source)) {
+            this["capabilities"] = [];
         }
         if (!("enabled" in $$source)) {
             this["enabled"] = false;
@@ -166,8 +217,49 @@ export class ManagedPlugin {
      * Creates a new ManagedPlugin instance from a string or object.
      */
     static createFrom($$source: any = {}): ManagedPlugin {
+        const $$createField6_0 = $$createType1;
+        const $$createField7_0 = $$createType3;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("permissions" in $$parsedSource) {
+            $$parsedSource["permissions"] = $$createField6_0($$parsedSource["permissions"]);
+        }
+        if ("capabilities" in $$parsedSource) {
+            $$parsedSource["capabilities"] = $$createField7_0($$parsedSource["capabilities"]);
+        }
         return new ManagedPlugin($$parsedSource as Partial<ManagedPlugin>);
+    }
+}
+
+export class PluginActionRequest {
+    "pluginId": string;
+    "capabilityId": string;
+    "action": Action;
+
+    /** Creates a new PluginActionRequest instance. */
+    constructor($$source: Partial<PluginActionRequest> = {}) {
+        if (!("pluginId" in $$source)) {
+            this["pluginId"] = "";
+        }
+        if (!("capabilityId" in $$source)) {
+            this["capabilityId"] = "";
+        }
+        if (!("action" in $$source)) {
+            this["action"] = (new Action());
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PluginActionRequest instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PluginActionRequest {
+        const $$createField2_0 = $$createType4;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("action" in $$parsedSource) {
+            $$parsedSource["action"] = $$createField2_0($$parsedSource["action"]);
+        }
+        return new PluginActionRequest($$parsedSource as Partial<PluginActionRequest>);
     }
 }
 
@@ -203,9 +295,9 @@ export class PluginManagerState {
      * Creates a new PluginManagerState instance from a string or object.
      */
     static createFrom($$source: any = {}): PluginManagerState {
-        const $$createField0_0 = $$createType2;
-        const $$createField1_0 = $$createType4;
-        const $$createField2_0 = $$createType5;
+        const $$createField0_0 = $$createType6;
+        const $$createField1_0 = $$createType8;
+        const $$createField2_0 = $$createType1;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("plugins" in $$parsedSource) {
             $$parsedSource["plugins"] = $$createField0_0($$parsedSource["plugins"]);
@@ -252,7 +344,7 @@ export class Result {
      * Creates a new Result instance from a string or object.
      */
     static createFrom($$source: any = {}): Result {
-        const $$createField4_0 = $$createType6;
+        const $$createField4_0 = $$createType4;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("action" in $$parsedSource) {
             $$parsedSource["action"] = $$createField4_0($$parsedSource["action"]);
@@ -289,7 +381,7 @@ export class Status {
      * Creates a new Status instance from a string or object.
      */
     static createFrom($$source: any = {}): Status {
-        const $$createField3_0 = $$createType5;
+        const $$createField3_0 = $$createType1;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("pluginRoots" in $$parsedSource) {
             $$parsedSource["pluginRoots"] = $$createField3_0($$parsedSource["pluginRoots"]);
@@ -300,9 +392,11 @@ export class Status {
 
 // Private type creation functions
 const $$createType0 = PluginManagerState.createFrom;
-const $$createType1 = ManagedPlugin.createFrom;
-const $$createType2 = $Create.Array($$createType1);
-const $$createType3 = ManagedLoadError.createFrom;
-const $$createType4 = $Create.Array($$createType3);
-const $$createType5 = $Create.Array($Create.Any);
-const $$createType6 = Action.createFrom;
+const $$createType1 = $Create.Array($Create.Any);
+const $$createType2 = ManagedCapability.createFrom;
+const $$createType3 = $Create.Array($$createType2);
+const $$createType4 = Action.createFrom;
+const $$createType5 = ManagedPlugin.createFrom;
+const $$createType6 = $Create.Array($$createType5);
+const $$createType7 = ManagedLoadError.createFrom;
+const $$createType8 = $Create.Array($$createType7);

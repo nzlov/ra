@@ -169,6 +169,18 @@ footer {
   width: min(920px, 100%);
 }
 
+.capability-surface {
+  width: min(920px, 100%);
+}
+
+.capability-surface iframe {
+  display: block;
+  width: 100%;
+  min-height: 520px;
+  border: 0;
+  background: #ffffff;
+}
+
 .manager-header {
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr) auto auto;
@@ -226,9 +238,7 @@ footer {
 
 .plugin-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
+  gap: 10px;
   min-height: 68px;
   border: 1px solid #2d343c;
   border-radius: 7px;
@@ -238,6 +248,13 @@ footer {
 
 .plugin-row.disabled {
   background: #171a1e;
+}
+
+.plugin-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
 }
 
 .plugin-main {
@@ -255,6 +272,42 @@ footer {
   justify-content: flex-end;
 }
 
+.plugin-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  color: #8994a1;
+  font-size: 11px;
+}
+
+.plugin-meta span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capability-list {
+  display: grid;
+  gap: 6px;
+}
+
+.capability-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #2a3139;
+  border-radius: 7px;
+  background: #181c21;
+  padding: 8px;
+}
+
+.capability-row.disabled {
+  background: #15181c;
+}
+
 .switch {
   display: inline-flex;
   min-height: 36px;
@@ -265,6 +318,10 @@ footer {
   color: #cbd5df;
   padding: 0 10px;
   font-size: 12px;
+}
+
+.switch.compact {
+  min-height: 32px;
 }
 
 .switch input {
@@ -327,7 +384,12 @@ footer {
   }
 
   .plugin-row,
+  .plugin-top,
   .plugin-main {
+    grid-template-columns: 1fr;
+  }
+
+  .capability-row {
     grid-template-columns: 1fr;
   }
 

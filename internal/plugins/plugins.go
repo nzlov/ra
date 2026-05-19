@@ -1,13 +1,13 @@
 package plugins
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/nzlov/ra/internal/pluginbundle"
 )
 
 type Registry struct {
@@ -22,24 +22,30 @@ type Root struct {
 	Source string
 }
 
-type Plugin struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Type        string    `json:"type"`
-	Entry       string    `json:"entry"`
-	Permissions []string  `json:"permissions,omitempty"`
-	Commands    []Command `json:"commands,omitempty"`
-	Source      string    `json:"source,omitempty"`
-	Dir         string    `json:"-"`
-	EntryPath   string    `json:"-"`
-	Disabled    bool      `json:"-"`
+type BuiltinPlugin struct {
+	Name string
+	Raw  []byte
 }
 
-type Command struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	Subtitle string `json:"subtitle,omitempty"`
-	Export   string `json:"export,omitempty"`
+type Plugin struct {
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Version      string            `json:"version"`
+	Permissions  []string          `json:"permissions,omitempty"`
+	Capabilities []Capability      `json:"capabilities,omitempty"`
+	Assets       map[string][]byte `json:"-"`
+	Source       string            `json:"source,omitempty"`
+	Path         string            `json:"-"`
+	Disabled     bool              `json:"-"`
+}
+
+type Capability struct {
+	ID       string   `json:"id"`
+	Title    string   `json:"title"`
+	Icon     string   `json:"icon,omitempty"`
+	UI       string   `json:"ui"`
+	Keywords []string `json:"keywords,omitempty"`
+	Disabled bool     `json:"-"`
 }
 
 type LoadError struct {
@@ -56,14 +62,12 @@ type Result struct {
 }
 
 type Action struct {
-	Type      string `json:"type"`
-	PluginID  string `json:"pluginId"`
-	CommandID string `json:"commandId"`
-	EntryPath string `json:"entryPath"`
-	Export    string `json:"export,omitempty"`
+	Type         string `json:"type"`
+	PluginID     string `json:"pluginId"`
+	CapabilityID string `json:"capabilityId,omitempty"`
+	UI           string `json:"ui,omitempty"`
+	Query        string `json:"query,omitempty"`
 }
-
-var validID = regexp.MustCompile(`^[a-z0-9][a-z0-9-_.]*$`)
 
 func LoadRegistry(root string) (Registry, error) {
 	return LoadRegistries([]string{root})
@@ -78,10 +82,10 @@ func LoadRegistries(roots []string) (Registry, error) {
 		}
 		items = append(items, Root{Path: root, Source: source})
 	}
-	return LoadRegistriesWithSources(items)
+	return LoadRegistriesWithSources(items, nil)
 }
 
-func LoadRegistriesWithSources(roots []Root) (Registry, error) {
+func LoadRegistriesWithSources(roots []Root, builtins []BuiltinPlugin) (Registry, error) {
 	rootPaths := make([]string, 0, len(roots))
 	for _, root := range roots {
 		rootPaths = append(rootPaths, root.Path)
@@ -90,16 +94,24 @@ func LoadRegistriesWithSources(roots []Root) (Registry, error) {
 	if len(roots) == 1 {
 		registry.Root = roots[0].Path
 	}
-	seen := map[string]struct{}{}
+	seenRoots := map[string]struct{}{}
 	seenPlugins := map[string]string{}
+	for _, builtin := range builtins {
+		plugin, err := loadWASMBytes(builtin.Raw, "builtin", builtin.Name)
+		if err != nil {
+			registry.Errors = append(registry.Errors, LoadError{Path: builtin.Name, Error: err.Error()})
+			continue
+		}
+		addPlugin(plugin, &registry, seenPlugins)
+	}
 	for _, root := range roots {
 		if root.Path == "" {
 			continue
 		}
-		if _, ok := seen[root.Path]; ok {
+		if _, ok := seenRoots[root.Path]; ok {
 			continue
 		}
-		seen[root.Path] = struct{}{}
+		seenRoots[root.Path] = struct{}{}
 		source := root.Source
 		if source == "" {
 			source = "builtin"
@@ -125,58 +137,59 @@ func loadRoot(root string, source string, registry *Registry, seenPlugins map[st
 	}
 
 	for _, item := range items {
-		if !item.IsDir() {
+		if item.IsDir() || filepath.Ext(item.Name()) != ".wasm" {
 			continue
 		}
-		pluginDir := filepath.Join(root, item.Name())
-		plugin, err := loadPlugin(pluginDir)
+		pluginPath := filepath.Join(root, item.Name())
+		plugin, err := loadWASMFile(pluginPath, source)
 		if err != nil {
-			registry.Errors = append(registry.Errors, LoadError{Path: pluginDir, Error: err.Error()})
+			registry.Errors = append(registry.Errors, LoadError{Path: pluginPath, Error: err.Error()})
 			continue
 		}
-		if firstPath, ok := seenPlugins[plugin.ID]; ok {
-			registry.Errors = append(registry.Errors, LoadError{
-				Path:  pluginDir,
-				Error: fmt.Sprintf("id conflict for %q: already loaded from %s", plugin.ID, firstPath),
-			})
-			continue
-		}
-		seenPlugins[plugin.ID] = pluginDir
-		plugin.Source = source
-		registry.Plugins = append(registry.Plugins, plugin)
+		addPlugin(plugin, registry, seenPlugins)
 	}
 	return nil
 }
 
+func addPlugin(plugin Plugin, registry *Registry, seenPlugins map[string]string) {
+	if firstPath, ok := seenPlugins[plugin.ID]; ok {
+		registry.Errors = append(registry.Errors, LoadError{
+			Path:  plugin.Path,
+			Error: fmt.Sprintf("id conflict for %q: already loaded from %s", plugin.ID, firstPath),
+		})
+		return
+	}
+	seenPlugins[plugin.ID] = plugin.Path
+	registry.Plugins = append(registry.Plugins, plugin)
+}
+
 func (r Registry) Search(query string, limit int) []Result {
-	query = strings.ToLower(strings.TrimSpace(query))
+	trimmed := strings.TrimSpace(query)
+	tokens := strings.Fields(strings.ToLower(trimmed))
 	var results []Result
 	for _, plugin := range r.Plugins {
 		if plugin.Disabled {
 			continue
 		}
-		for _, command := range plugin.Commands {
-			text := strings.ToLower(plugin.Name + " " + command.Title + " " + command.Subtitle)
-			if query != "" && !strings.Contains(text, query) {
+		for _, capability := range plugin.Capabilities {
+			if capability.Disabled {
 				continue
 			}
-			actionType := "plugin.open"
-			if plugin.Type == "command" {
-				actionType = "plugin.run"
-			} else if plugin.Type == "manager" {
-				actionType = "plugin.manage"
+			text := strings.ToLower(plugin.Name + " " + capability.Title + " " + strings.Join(capability.Keywords, " "))
+			if len(tokens) > 0 && !matchesAnyToken(text, tokens) {
+				continue
 			}
 			results = append(results, Result{
-				ID:       "plugin:" + plugin.ID + ":" + command.ID,
-				Title:    command.Title,
-				Subtitle: command.Subtitle,
-				Kind:     "plugin",
+				ID:       "capability:" + plugin.ID + ":" + capability.ID,
+				Title:    capability.Title,
+				Subtitle: plugin.Name,
+				Kind:     "capability",
 				Action: Action{
-					Type:      actionType,
-					PluginID:  plugin.ID,
-					CommandID: command.ID,
-					EntryPath: plugin.EntryPath,
-					Export:    command.Export,
+					Type:         "capability.open",
+					PluginID:     plugin.ID,
+					CapabilityID: capability.ID,
+					UI:           capability.UI,
+					Query:        trimmed,
 				},
 			})
 		}
@@ -187,53 +200,68 @@ func (r Registry) Search(query string, limit int) []Result {
 	return results
 }
 
-func loadPlugin(dir string) (Plugin, error) {
-	return LoadPluginPackage(dir)
+func matchesAnyToken(text string, tokens []string) bool {
+	words := strings.Fields(text)
+	for _, token := range tokens {
+		if strings.Contains(text, token) {
+			return true
+		}
+		for _, word := range words {
+			if word != "" && strings.Contains(token, word) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
-func LoadPluginPackage(dir string) (Plugin, error) {
-	raw, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+func loadWASMFile(path string, source string) (Plugin, error) {
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return Plugin{}, err
 	}
-	var plugin Plugin
-	if err := json.Unmarshal(raw, &plugin); err != nil {
-		return Plugin{}, err
-	}
-	if err := validate(plugin); err != nil {
-		return Plugin{}, err
-	}
-	plugin.Dir = dir
-	plugin.EntryPath = filepath.Join(dir, plugin.Entry)
-	if _, err := os.Stat(plugin.EntryPath); err != nil {
-		return Plugin{}, fmt.Errorf("entry %q is not readable: %w", plugin.Entry, err)
-	}
-	return plugin, nil
+	return loadWASMBytes(raw, source, path)
 }
 
-func validate(plugin Plugin) error {
-	if !validID.MatchString(plugin.ID) {
-		return fmt.Errorf("invalid plugin id %q", plugin.ID)
+func LoadPluginFile(path string) (Plugin, error) {
+	return loadWASMFile(path, "user")
+}
+
+func loadWASMBytes(raw []byte, source string, sourcePath string) (Plugin, error) {
+	bundle, err := pluginbundle.Read(raw)
+	if err != nil {
+		return Plugin{}, err
 	}
-	if strings.TrimSpace(plugin.Name) == "" {
-		return fmt.Errorf("plugin %q has empty name", plugin.ID)
+	return Plugin{
+		ID:           bundle.Manifest.ID,
+		Name:         bundle.Manifest.Name,
+		Version:      bundle.Manifest.Version,
+		Permissions:  append([]string(nil), bundle.Manifest.Permissions...),
+		Capabilities: capabilitiesFromBundle(bundle.Capabilities),
+		Assets:       cloneAssets(bundle.Assets),
+		Source:       source,
+		Path:         sourcePath,
+	}, nil
+}
+
+func capabilitiesFromBundle(items []pluginbundle.Capability) []Capability {
+	capabilities := make([]Capability, 0, len(items))
+	for _, item := range items {
+		capabilities = append(capabilities, Capability{
+			ID:       item.ID,
+			Title:    item.Title,
+			Icon:     item.Icon,
+			UI:       item.UI,
+			Keywords: append([]string(nil), item.Keywords...),
+		})
 	}
-	if plugin.Type != "webview" && plugin.Type != "command" {
-		return fmt.Errorf("plugin %q has unsupported type %q", plugin.ID, plugin.Type)
+	return capabilities
+}
+
+func cloneAssets(assets map[string][]byte) map[string][]byte {
+	out := make(map[string][]byte, len(assets))
+	for path, data := range assets {
+		out[path] = append([]byte(nil), data...)
 	}
-	if strings.TrimSpace(plugin.Entry) == "" || filepath.IsAbs(plugin.Entry) || strings.Contains(plugin.Entry, "..") {
-		return fmt.Errorf("plugin %q has invalid entry %q", plugin.ID, plugin.Entry)
-	}
-	for _, command := range plugin.Commands {
-		if !validID.MatchString(command.ID) {
-			return fmt.Errorf("plugin %q has invalid command id %q", plugin.ID, command.ID)
-		}
-		if strings.TrimSpace(command.Title) == "" {
-			return fmt.Errorf("plugin %q command %q has empty title", plugin.ID, command.ID)
-		}
-		if plugin.Type == "command" && strings.TrimSpace(command.Export) == "" {
-			return fmt.Errorf("plugin %q command %q has empty export", plugin.ID, command.ID)
-		}
-	}
-	return nil
+	return out
 }

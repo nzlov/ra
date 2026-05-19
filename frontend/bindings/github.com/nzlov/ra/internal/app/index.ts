@@ -10,8 +10,10 @@ export {
     Action,
     InstallPluginResult,
     InvokeResult,
+    ManagedCapability,
     ManagedLoadError,
     ManagedPlugin,
+    PluginActionRequest,
     PluginManagerState,
     Result,
     Status

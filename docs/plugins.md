@@ -1,94 +1,116 @@
 # RA Plugin Contract
 
-RA currently supports a minimal local plugin package format. Built-in development plugins live under `plugins/<plugin-id>/`; user plugins live under `~/.local/share/ra/plugins/<plugin-id>/`.
+RA plugins are single `.wasm` package files. RA core owns the launcher window, search integration, plugin registry, and controlled host APIs. Plugin code and UI resources are carried by the plugin package.
 
-The built-in `ra-plugin-manager` entry appears in launcher search results as a protected plugin. It opens the plugin management view and talks to RA through controlled service APIs instead of manipulating files from plugin page JavaScript.
+Built-in plugins are stored as source directories under `plugins/`. At build/runtime RA embeds those source files and assembles valid WASM plugin bundles in memory; generated `.wasm` files are not committed. User-installed plugins live as files under `~/.local/share/ra/plugins/<plugin-id>.wasm`.
 
-The built-in `ra-app-launcher` plugin provides desktop app search and launch. It is not protected, so it can be disabled in the plugin manager, but it cannot be uninstalled because it is built into RA.
+## Built-In Plugins
 
-## Package Layout
+- `ra-app-launcher`: provides the `apps` capability for desktop app search and launch.
+- `ra-calculator`: provides the `calculate` capability for `=` calculator queries.
+- `ra-plugin-manager`: provides the `manage` capability for plugin install, uninstall, enable, disable, and refresh.
 
-```text
-plugins/example-webview/
-  manifest.json
-  index.html
-  plugin.js
-  plugin.wasm
-```
+Only `ra-plugin-manager.manage` is protected. Other built-in plugins can be disabled, but built-ins cannot be uninstalled or replaced by user plugin packages with the same ID.
 
-`plugin.wasm` is optional for page plugins. The page can load it with standard browser WebAssembly APIs.
+## Package Sections
 
-## Manifest
+Each plugin bundle is a WASM file with RA custom sections:
+
+- `ra.manifest`: JSON object with plugin metadata.
+- `ra.capabilities`: JSON array describing capability entries.
+- `ra.assets`: JSON object whose keys are absolute asset paths and whose values are base64-encoded bytes.
+
+Manifest example:
 
 ```json
 {
-  "id": "example-webview",
-  "name": "Example Webview",
-  "type": "webview",
-  "entry": "index.html",
-  "permissions": ["clipboard:write"],
-  "commands": [
-    {
-      "id": "open",
-      "title": "Open Example Plugin",
-      "subtitle": "HTML page with a WASM slot"
-    }
-  ]
+  "id": "codec-tools",
+  "name": "Codec Tools",
+  "version": "0.1.0",
+  "permissions": ["clipboard:write"]
 }
+```
+
+Capabilities example:
+
+```json
+[
+  {
+    "id": "base64",
+    "title": "Base64 Convert",
+    "icon": "/icons/codec.svg",
+    "ui": "/base64/index.html",
+    "keywords": ["base64", "b64", "encode", "decode"]
+  }
+]
 ```
 
 Rules:
 
-- `id` and command IDs must match `^[a-z0-9][a-z0-9-_.]*$`.
-- `type` is `webview` or `command`.
-- `entry` must be a relative path inside the plugin directory.
-- `commands` are surfaced in the launcher search results.
+- Plugin IDs and capability IDs must match `^[a-z0-9][a-z0-9-_.]*$`.
+- A plugin may expose multiple capabilities.
+- Every capability has a UI asset path.
+- Asset paths in `ra.assets`, `icon`, and `ui` must start with `/`.
+- Capability UI assets must be `.html`, live below a capability-specific directory, and not share that UI directory with another capability.
+- Permissions are declared in the manifest for user review and are enforced when the capability asks RA to run host actions.
 
-## Runtime Behavior
-
-When a `webview` command is selected, RA returns a `plugin.open` action result with a `file://` URL for the plugin entry page. The frontend opens that URL in a new browser/webview target.
-
-Calculator results use `clipboard.write`; on Linux RA writes through `wl-copy` when available, then falls back to `xclip -selection clipboard`.
-
-Command plugins run a WASM module through `wazero`. The current command ABI is intentionally tiny: the selected command names a no-argument export that returns one `i32`. RA displays that integer result and copies it when clipboard support is available.
+Asset section example:
 
 ```json
 {
-  "id": "answer-command",
-  "name": "Answer Command",
-  "type": "command",
-  "entry": "answer.wasm",
-  "permissions": ["clipboard:write"],
-  "commands": [
-    {
-      "id": "answer",
-      "title": "Run Answer WASM",
-      "subtitle": "Returns 42 and copies it",
-      "export": "answer"
-    }
-  ]
+  "/base64/index.html": "PG1haW4+PC9tYWluPg==",
+  "/icons/codec.svg": "PHN2Zz48L3N2Zz4="
 }
 ```
 
+## Search And Launch
+
+RA searches capabilities, not legacy command entries. When a capability matches a query, RA returns a `capability.open` action with:
+
+- `pluginId`
+- `capabilityId`
+- `ui`
+- `query`
+
+The launcher can pass the query into the capability UI so a plugin such as `codec-tools` can route `base64 hello` directly into its Base64 interface.
+
+Capability UI assets are served by RA at:
+
+```text
+/plugins/<plugin-id>/<capability-id>/<asset-path>
+```
+
+For example, `/base64/index.html` in `codec-tools.base64` is opened as `/plugins/codec-tools/base64/base64/index.html?q=base64%20hello`. RA only serves assets for loaded and enabled capabilities.
+
+Capability pages run in a sandboxed iframe without same-origin access to the RA window. The iframe allows scripts only, and plugin asset responses include a restrictive Content Security Policy. Capability pages cannot call Wails bindings directly. RA injects a small `window.ra` bridge into HTML assets:
+
+```js
+await window.ra.invoke({type: 'clipboard.write', text: 'copied text'});
+```
+
+RA accepts only supported host actions through this bridge, checks that the plugin and capability are still enabled, and then checks the plugin's declared permissions. Current permissions:
+
+- `clipboard:write`: allows `{type: 'clipboard.write', text: string}`.
+
+Use relative URLs from the capability page for packaged assets. RA resolves `/plugins/<plugin-id>/<capability-id>/icons/codec.svg` to the package asset `/icons/codec.svg`, so a page at `/base64/index.html` can load `../icons/codec.svg`. HTML assets are capability-scoped: RA serves the current capability UI and files under that UI directory, but it will not serve another capability's HTML page through the current capability route.
+
 ## Plugin Management
 
-The built-in plugin manager supports:
+The plugin manager uses RA service APIs rather than direct filesystem access.
 
-- Listing built-in plugins, user plugins, and load failures.
-- Enabling or disabling plugins by writing `~/.config/ra/plugins.json`.
-- Installing from a selected local plugin directory into `~/.local/share/ra/plugins/<plugin-id>`.
-- Uninstalling user plugins by deleting their user plugin directory.
-- Refreshing the registry after management actions.
+Supported operations:
+
+- List built-in plugins, user plugins, capabilities, declared permissions, and load failures.
+- Enable or disable plugins by writing `~/.config/ra/plugins.json`.
+- Enable or disable individual capabilities through `disabledCapabilities`.
+- Install from a selected local `.wasm` file into `~/.local/share/ra/plugins/<plugin-id>.wasm`.
+- Uninstall user plugins by deleting only that user `.wasm` file.
+- Refresh the registry.
 
 Boundaries:
 
 - Remote plugin markets are not supported yet.
-- Plugin ID conflicts are rejected; install never overwrites an existing plugin.
-- Built-in plugins cannot be uninstalled.
-- `ra-plugin-manager` cannot be disabled, uninstalled, or replaced by an external plugin package.
-- `ra-app-launcher` can be disabled, but external plugin packages cannot replace its built-in ID.
-- External manifests may declare `webview` or `command`; `manager` and `app` are reserved for RA itself.
-
-## MVP Boundary
-
-The current command WASM ABI only supports `() -> i32`. The intended next step is to add explicit host functions for clipboard, storage, app launch, and structured UI result generation.
+- Plugin ID conflicts are rejected; install never overwrites an existing package.
+- Built-in plugin IDs are reserved.
+- Built-in plugins are not uninstallable.
+- `ra-plugin-manager.manage` cannot be disabled.

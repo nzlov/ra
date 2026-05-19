@@ -21,9 +21,9 @@ func main() {
 
 	wailsApp := application.New(application.Options{
 		Name:        "RA",
-		Description: "Linux-first launcher with HTML/WASM plugins",
+		Description: "Linux-first launcher with single-WASM plugins",
 		Services: []application.Service{
-			application.NewService(launcher),
+			application.NewServiceWithOptions(launcher, application.ServiceOptions{Route: "/plugins"}),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>RA Calculator</title>
+    <style>
+      :root {
+        color: #17202a;
+        background: #f6f8fb;
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 18px;
+      }
+
+      main {
+        display: grid;
+        gap: 12px;
+      }
+
+      input {
+        width: 100%;
+        border: 1px solid #cbd5df;
+        border-radius: 7px;
+        padding: 12px;
+        color: #111827;
+        font: inherit;
+        font-size: 20px;
+        outline: 0;
+      }
+
+      input:focus {
+        border-color: #2f6f4e;
+      }
+
+      output {
+        display: block;
+        min-height: 52px;
+        border: 1px solid #d6dde6;
+        border-radius: 7px;
+        background: #ffffff;
+        color: #111827;
+        padding: 12px;
+        font-size: 24px;
+      }
+
+      button {
+        width: max-content;
+        border: 1px solid #cbd5df;
+        border-radius: 7px;
+        background: #ffffff;
+        color: #17202a;
+        padding: 8px 12px;
+        font: inherit;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <input id="query" autocomplete="off" spellcheck="false" />
+      <output id="result"></output>
+      <button id="copy" type="button">Copy</button>
+    </main>
+    <script>
+      const query = document.querySelector('#query');
+      const result = document.querySelector('#result');
+      const copy = document.querySelector('#copy');
+
+      function calculate(value) {
+        const expression = value.trim().replace(/^=/, '');
+        if (!expression) {
+          return '';
+        }
+        if (!/^[0-9+\-*/().\s]+$/.test(expression)) {
+          return 'Invalid expression';
+        }
+        try {
+          const answer = Function(`"use strict"; return (${expression})`)();
+          return Number.isFinite(answer) ? String(answer) : 'Invalid expression';
+        } catch {
+          return 'Invalid expression';
+        }
+      }
+
+      function update() {
+        result.value = calculate(query.value);
+      }
+
+      query.value = new URLSearchParams(location.search).get('q') || '';
+      query.addEventListener('input', update);
+      copy.addEventListener('click', async () => {
+        if (!result.value || !window.ra) return;
+        await window.ra.invoke({type: 'clipboard.write', text: result.value});
+      });
+      update();
+      query.focus();
+    </script>
+  </body>
+</html>

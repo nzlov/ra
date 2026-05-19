@@ -8,25 +8,39 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
+	"github.com/nzlov/ra/internal/desktop"
 	"github.com/nzlov/ra/internal/plugins"
 )
 
 const (
 	pluginManagerID     = "ra-plugin-manager"
 	appLauncherPluginID = "ra-app-launcher"
+	calculatorPluginID  = "ra-calculator"
 )
 
 type ManagedPlugin struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Type          string `json:"type"`
-	Source        string `json:"source"`
-	Dir           string `json:"dir"`
-	EntryPath     string `json:"entryPath"`
-	Enabled       bool   `json:"enabled"`
-	Protected     bool   `json:"protected"`
-	Uninstallable bool   `json:"uninstallable"`
+	ID            string              `json:"id"`
+	Name          string              `json:"name"`
+	Type          string              `json:"type"`
+	Version       string              `json:"version"`
+	Source        string              `json:"source"`
+	Path          string              `json:"path"`
+	Permissions   []string            `json:"permissions"`
+	Capabilities  []ManagedCapability `json:"capabilities"`
+	Enabled       bool                `json:"enabled"`
+	Protected     bool                `json:"protected"`
+	Uninstallable bool                `json:"uninstallable"`
+}
+
+type ManagedCapability struct {
+	ID       string   `json:"id"`
+	Title    string   `json:"title"`
+	Icon     string   `json:"icon"`
+	UI       string   `json:"ui"`
+	Keywords []string `json:"keywords"`
+	Enabled  bool     `json:"enabled"`
 }
 
 type ManagedLoadError struct {
@@ -49,7 +63,8 @@ type InstallPluginResult struct {
 }
 
 type PluginConfig struct {
-	Disabled []string `json:"disabled"`
+	Disabled             []string `json:"disabled"`
+	DisabledCapabilities []string `json:"disabledCapabilities,omitempty"`
 }
 
 func (s *LauncherService) PluginManagerState() PluginManagerState {
@@ -101,9 +116,37 @@ func (s *LauncherService) SetPluginEnabled(id string, enabled bool) (PluginManag
 	return s.PluginManagerState(), nil
 }
 
-func (s *LauncherService) InstallPlugin(sourceDir string) (InstallPluginResult, error) {
-	sourceDir = filepath.Clean(sourceDir)
-	plugin, err := plugins.LoadPluginPackage(sourceDir)
+func (s *LauncherService) SetCapabilityEnabled(pluginID string, capabilityID string, enabled bool) (PluginManagerState, error) {
+	if pluginID == pluginManagerID && capabilityID == "manage" && !enabled {
+		return s.PluginManagerState(), errors.New("plugin manager capability cannot be disabled")
+	}
+	if _, ok := s.findCapability(pluginID, capabilityID); !ok {
+		return s.PluginManagerState(), fmt.Errorf("capability %q.%q is not loaded", pluginID, capabilityID)
+	}
+	config := s.pluginConfig
+	key := capabilityKey(pluginID, capabilityID)
+	if enabled {
+		config.DisabledCapabilities = removeString(config.DisabledCapabilities, key)
+	} else if !containsString(config.DisabledCapabilities, key) {
+		config.DisabledCapabilities = append(config.DisabledCapabilities, key)
+	}
+	sort.Strings(config.DisabledCapabilities)
+	if err := writePluginConfig(s.config.PluginConfigPath, config); err != nil {
+		return s.PluginManagerState(), err
+	}
+	s.pluginConfig = config
+	if err := s.RefreshPlugins(); err != nil {
+		return s.PluginManagerState(), err
+	}
+	return s.PluginManagerState(), nil
+}
+
+func (s *LauncherService) InstallPlugin(sourcePath string) (InstallPluginResult, error) {
+	sourcePath = filepath.Clean(sourcePath)
+	if filepath.Ext(sourcePath) != ".wasm" {
+		return InstallPluginResult{State: s.PluginManagerState()}, errors.New("plugin install source must be a .wasm file")
+	}
+	plugin, err := plugins.LoadPluginFile(sourcePath)
 	if err != nil {
 		return InstallPluginResult{State: s.PluginManagerState()}, fmt.Errorf("read plugin package: %w", err)
 	}
@@ -114,13 +157,13 @@ func (s *LauncherService) InstallPlugin(sourceDir string) (InstallPluginResult, 
 		return InstallPluginResult{State: s.PluginManagerState()}, fmt.Errorf("plugin id conflict: %q already exists", plugin.ID)
 	}
 
-	targetDir := filepath.Join(s.config.UserPluginRoot, plugin.ID)
-	if _, err := os.Stat(targetDir); err == nil {
+	targetPath := filepath.Join(s.config.UserPluginRoot, plugin.ID+".wasm")
+	if _, err := os.Stat(targetPath); err == nil {
 		return InstallPluginResult{State: s.PluginManagerState()}, fmt.Errorf("plugin id conflict: %q already exists", plugin.ID)
 	} else if !os.IsNotExist(err) {
 		return InstallPluginResult{State: s.PluginManagerState()}, err
 	}
-	if err := copyDir(sourceDir, targetDir); err != nil {
+	if err := copyFile(sourcePath, targetPath, 0o644); err != nil {
 		return InstallPluginResult{State: s.PluginManagerState()}, fmt.Errorf("copy plugin: %w", err)
 	}
 	if err := s.RefreshPlugins(); err != nil {
@@ -128,7 +171,7 @@ func (s *LauncherService) InstallPlugin(sourceDir string) (InstallPluginResult, 
 	}
 	return InstallPluginResult{
 		PluginID:      plugin.ID,
-		InstalledPath: targetDir,
+		InstalledPath: targetPath,
 		State:         s.PluginManagerState(),
 	}, nil
 }
@@ -144,14 +187,15 @@ func (s *LauncherService) UninstallPlugin(id string) (PluginManagerState, error)
 	if plugin.Source != "user" {
 		return s.PluginManagerState(), fmt.Errorf("plugin %q is not a user plugin", id)
 	}
-	if !pathInside(s.config.UserPluginRoot, plugin.Dir) {
+	if !pathInside(s.config.UserPluginRoot, plugin.Path) {
 		return s.PluginManagerState(), fmt.Errorf("plugin %q is outside the user plugin root", id)
 	}
-	if err := os.RemoveAll(plugin.Dir); err != nil {
+	if err := os.Remove(plugin.Path); err != nil {
 		return s.PluginManagerState(), err
 	}
 
 	s.pluginConfig.Disabled = removeString(s.pluginConfig.Disabled, id)
+	s.pluginConfig.DisabledCapabilities = removeStringPrefix(s.pluginConfig.DisabledCapabilities, id+".")
 	if err := writePluginConfig(s.config.PluginConfigPath, s.pluginConfig); err != nil {
 		return s.PluginManagerState(), err
 	}
@@ -170,15 +214,50 @@ func (s *LauncherService) findPlugin(id string) (plugins.Plugin, bool) {
 	return plugins.Plugin{}, false
 }
 
+func (s *LauncherService) findDesktopEntry(id string) (desktop.Entry, bool) {
+	for _, entry := range s.desktopEntries {
+		if entry.ID == id {
+			return entry, true
+		}
+	}
+	return desktop.Entry{}, false
+}
+
+func (s *LauncherService) findCapability(pluginID string, capabilityID string) (plugins.Capability, bool) {
+	plugin, ok := s.findPlugin(pluginID)
+	if !ok {
+		return plugins.Capability{}, false
+	}
+	for _, capability := range plugin.Capabilities {
+		if capability.ID == capabilityID {
+			return capability, true
+		}
+	}
+	return plugins.Capability{}, false
+}
+
 func managedPlugin(plugin plugins.Plugin) ManagedPlugin {
 	protected := plugin.ID == pluginManagerID
+	capabilities := make([]ManagedCapability, 0, len(plugin.Capabilities))
+	for _, capability := range plugin.Capabilities {
+		capabilities = append(capabilities, ManagedCapability{
+			ID:       capability.ID,
+			Title:    capability.Title,
+			Icon:     capability.Icon,
+			UI:       capability.UI,
+			Keywords: append([]string(nil), capability.Keywords...),
+			Enabled:  !capability.Disabled,
+		})
+	}
 	return ManagedPlugin{
 		ID:            plugin.ID,
 		Name:          plugin.Name,
-		Type:          plugin.Type,
+		Type:          "wasm",
+		Version:       plugin.Version,
 		Source:        plugin.Source,
-		Dir:           plugin.Dir,
-		EntryPath:     plugin.EntryPath,
+		Path:          plugin.Path,
+		Permissions:   append([]string(nil), plugin.Permissions...),
+		Capabilities:  capabilities,
 		Enabled:       !plugin.Disabled,
 		Protected:     protected,
 		Uninstallable: plugin.Source == "user" && !protected,
@@ -198,11 +277,13 @@ func readPluginConfig(path string) (PluginConfig, error) {
 		return PluginConfig{}, err
 	}
 	config.Disabled = uniqueStrings(config.Disabled)
+	config.DisabledCapabilities = uniqueStrings(config.DisabledCapabilities)
 	return config, nil
 }
 
 func writePluginConfig(path string, config PluginConfig) error {
 	config.Disabled = uniqueStrings(config.Disabled)
+	config.DisabledCapabilities = uniqueStrings(config.DisabledCapabilities)
 	raw, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return err
@@ -211,37 +292,6 @@ func writePluginConfig(path string, config PluginConfig) error {
 		return err
 	}
 	return os.WriteFile(path, append(raw, '\n'), 0o644)
-}
-
-func copyDir(sourceDir string, targetDir string) error {
-	info, err := os.Stat(sourceDir)
-	if err != nil {
-		return err
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("%s is not a directory", sourceDir)
-	}
-	return filepath.WalkDir(sourceDir, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(sourceDir, path)
-		if err != nil {
-			return err
-		}
-		if rel == "." {
-			return nil
-		}
-		target := filepath.Join(targetDir, rel)
-		if entry.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		return copyFile(path, target, info.Mode().Perm())
-	})
 }
 
 func copyFile(source string, target string, mode os.FileMode) error {
@@ -302,6 +352,20 @@ func removeString(items []string, needle string) []string {
 		}
 	}
 	return out
+}
+
+func removeStringPrefix(items []string, prefix string) []string {
+	var out []string
+	for _, item := range items {
+		if !strings.HasPrefix(item, prefix) {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func capabilityKey(pluginID string, capabilityID string) string {
+	return pluginID + "." + capabilityID
 }
 
 func uniqueStrings(items []string) []string {

@@ -1,16 +1,11 @@
 package app
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
-
-	"github.com/nzlov/ra/internal/wasmplugin"
 )
 
 type ActionExecutor struct {
@@ -40,34 +35,14 @@ func (e ActionExecutor) Invoke(action Action) (InvokeResult, error) {
 			return InvokeResult{}, err
 		}
 		return InvokeResult{Type: action.Type, Message: "copied"}, nil
-	case "plugin.open":
-		if action.EntryPath == "" {
-			return InvokeResult{}, errors.New("missing plugin entry path")
+	case "capability.open":
+		if action.PluginID == "" {
+			return InvokeResult{}, errors.New("missing plugin id")
 		}
-		return InvokeResult{
-			Type:      action.Type,
-			Message:   filepath.Base(action.EntryPath),
-			EntryPath: action.EntryPath,
-			URL:       fileURL(action.EntryPath),
-		}, nil
-	case "plugin.run":
-		if action.EntryPath == "" {
-			return InvokeResult{}, errors.New("missing plugin entry path")
+		if action.CapabilityID == "" {
+			return InvokeResult{}, errors.New("missing capability id")
 		}
-		if action.Export == "" {
-			return InvokeResult{}, errors.New("missing wasm export")
-		}
-		value, err := wasmplugin.NewRunner().CallI32(context.Background(), action.EntryPath, action.Export)
-		if err != nil {
-			return InvokeResult{}, err
-		}
-		message := fmt.Sprint(value)
-		if len(e.ClipboardCommand) > 0 {
-			if err := e.run(e.ClipboardCommand[0], e.ClipboardCommand[1:], message); err != nil {
-				return InvokeResult{}, err
-			}
-		}
-		return InvokeResult{Type: action.Type, Message: message, EntryPath: action.EntryPath}, nil
+		return InvokeResult{Type: action.Type, Message: fmt.Sprintf("%s.%s", action.PluginID, action.CapabilityID)}, nil
 	default:
 		return InvokeResult{}, errors.New("unsupported action type")
 	}
@@ -94,12 +69,4 @@ func defaultClipboardCommand() []string {
 		}
 	}
 	return nil
-}
-
-func fileURL(path string) string {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		abs = path
-	}
-	return (&url.URL{Scheme: "file", Path: filepath.ToSlash(abs)}).String()
 }

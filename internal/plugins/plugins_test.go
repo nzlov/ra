@@ -4,22 +4,23 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/nzlov/ra/internal/pluginbundle"
 )
 
-func TestLoadRegistryReadsValidWebviewManifest(t *testing.T) {
+func TestLoadRegistryReadsWASMPlugins(t *testing.T) {
 	root := t.TempDir()
-	writePlugin(t, root, "example", `{
-  "id": "example-webview",
-  "name": "Example Webview",
-  "type": "webview",
-  "entry": "index.html",
-  "commands": [
-    {"id": "open", "title": "Open Example", "subtitle": "Show demo page"}
-  ]
-}`)
-	if err := os.WriteFile(filepath.Join(root, "example", "index.html"), []byte("<main></main>"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeBundle(t, filepath.Join(root, "codec-tools.wasm"), pluginbundle.Manifest{
+		ID:          "codec-tools",
+		Name:        "Codec Tools",
+		Version:     "0.1.0",
+		Permissions: []string{"clipboard:write"},
+	}, []pluginbundle.Capability{{
+		ID:       "base64",
+		Title:    "Base64 Convert",
+		UI:       "/base64/index.html",
+		Keywords: []string{"base64", "b64"},
+	}})
 
 	registry, err := LoadRegistry(root)
 	if err != nil {
@@ -29,116 +30,116 @@ func TestLoadRegistryReadsValidWebviewManifest(t *testing.T) {
 		t.Fatalf("len(Plugins) = %d", len(registry.Plugins))
 	}
 	plugin := registry.Plugins[0]
-	if plugin.ID != "example-webview" {
+	if plugin.ID != "codec-tools" {
 		t.Fatalf("ID = %q", plugin.ID)
 	}
-	if plugin.EntryPath != filepath.Join(root, "example", "index.html") {
-		t.Fatalf("EntryPath = %q", plugin.EntryPath)
+	if plugin.Path != filepath.Join(root, "codec-tools.wasm") {
+		t.Fatalf("Path = %q", plugin.Path)
+	}
+	if len(plugin.Capabilities) != 1 || plugin.Capabilities[0].ID != "base64" {
+		t.Fatalf("Capabilities = %#v", plugin.Capabilities)
+	}
+	if plugin.Permissions[0] != "clipboard:write" {
+		t.Fatalf("Permissions = %#v", plugin.Permissions)
 	}
 }
 
-func TestLoadRegistryRejectsInvalidIDAndMissingEntry(t *testing.T) {
+func TestLoadRegistryRejectsInvalidWASMAndIDConflicts(t *testing.T) {
 	root := t.TempDir()
-	writePlugin(t, root, "bad-id", `{"id":"Bad ID","name":"Bad","type":"webview","entry":"index.html"}`)
-	writePlugin(t, root, "missing-entry", `{"id":"missing-entry","name":"Missing","type":"webview","entry":"index.html"}`)
+	writeBundle(t, filepath.Join(root, "first.wasm"), pluginbundle.Manifest{ID: "shared", Name: "Shared", Version: "0.1.0"}, nil)
+	writeBundle(t, filepath.Join(root, "second.wasm"), pluginbundle.Manifest{ID: "shared", Name: "Shared Again", Version: "0.1.0"}, nil)
+	if err := os.WriteFile(filepath.Join(root, "bad.wasm"), []byte("bad"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	registry, err := LoadRegistry(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(registry.Plugins) != 0 {
-		t.Fatalf("len(Plugins) = %d", len(registry.Plugins))
-	}
-	if len(registry.Errors) != 2 {
-		t.Fatalf("len(Errors) = %d", len(registry.Errors))
-	}
-}
-
-func TestSearchReturnsCommandResults(t *testing.T) {
-	registry := Registry{Plugins: []Plugin{{
-		ID:   "example-webview",
-		Name: "Example Webview",
-		Type: "webview",
-		Commands: []Command{{
-			ID:       "open",
-			Title:    "Open Example",
-			Subtitle: "Show demo page",
-		}},
-	}}}
-
-	results := registry.Search("example", 10)
-	if len(results) != 1 {
-		t.Fatalf("len(results) = %d", len(results))
-	}
-	if results[0].Action.Type != "plugin.open" {
-		t.Fatalf("Action.Type = %q", results[0].Action.Type)
-	}
-	if results[0].Action.PluginID != "example-webview" {
-		t.Fatalf("PluginID = %q", results[0].Action.PluginID)
-	}
-}
-
-func TestSearchReturnsRunActionForCommandPlugin(t *testing.T) {
-	registry := Registry{Plugins: []Plugin{{
-		ID:        "answer-command",
-		Name:      "Answer Command",
-		Type:      "command",
-		EntryPath: "/tmp/answer.wasm",
-		Commands: []Command{{
-			ID:       "answer",
-			Title:    "Calculate Answer",
-			Subtitle: "Run WASM export",
-			Export:   "answer",
-		}},
-	}}}
-
-	results := registry.Search("answer", 10)
-	if len(results) != 1 {
-		t.Fatalf("len(results) = %d", len(results))
-	}
-	if results[0].Action.Type != "plugin.run" {
-		t.Fatalf("Action.Type = %q", results[0].Action.Type)
-	}
-	if results[0].Action.Export != "answer" {
-		t.Fatalf("Export = %q", results[0].Action.Export)
-	}
-}
-
-func TestLoadRegistriesMergesPluginDirsAndKeepsErrors(t *testing.T) {
-	root := t.TempDir()
-	builtin := filepath.Join(root, "builtin")
-	user := filepath.Join(root, "user")
-	writePlugin(t, builtin, "web", `{
-  "id": "builtin-web",
-  "name": "Builtin Web",
-  "type": "webview",
-  "entry": "index.html",
-  "commands": [{"id":"open","title":"Open Builtin"}]
-}`)
-	if err := os.WriteFile(filepath.Join(builtin, "web", "index.html"), []byte("<main></main>"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	writePlugin(t, user, "bad", `{"id":"Bad ID","name":"Bad","type":"webview","entry":"index.html"}`)
-
-	registry, err := LoadRegistries([]string{builtin, user})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(registry.Plugins) != 1 {
 		t.Fatalf("len(Plugins) = %d", len(registry.Plugins))
 	}
-	if len(registry.Errors) != 1 {
-		t.Fatalf("len(Errors) = %d", len(registry.Errors))
+	if len(registry.Errors) != 2 {
+		t.Fatalf("len(Errors) = %d: %#v", len(registry.Errors), registry.Errors)
 	}
 }
 
-func writePlugin(t *testing.T, root, dir, manifest string) {
+func TestLoadRegistriesIncludesBuiltinPlugins(t *testing.T) {
+	userRoot := t.TempDir()
+	builtin := BuiltinPlugin{
+		Raw: mustBundle(t, pluginbundle.Manifest{ID: "ra-app-launcher", Name: "RA App Launcher", Version: "0.1.0"}, []pluginbundle.Capability{{
+			ID:       "apps",
+			Title:    "Apps",
+			UI:       "/apps/index.html",
+			Keywords: []string{"app"},
+		}}),
+	}
+
+	registry, err := LoadRegistriesWithSources([]Root{{Path: userRoot, Source: "user"}}, []BuiltinPlugin{builtin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(registry.Plugins) != 1 {
+		t.Fatalf("len(Plugins) = %d", len(registry.Plugins))
+	}
+	if registry.Plugins[0].Source != "builtin" {
+		t.Fatalf("Source = %q", registry.Plugins[0].Source)
+	}
+}
+
+func TestSearchReturnsCapabilityResults(t *testing.T) {
+	registry := Registry{Plugins: []Plugin{{
+		ID:   "codec-tools",
+		Name: "Codec Tools",
+		Capabilities: []Capability{{
+			ID:       "base64",
+			Title:    "Base64 Convert",
+			UI:       "/base64/index.html",
+			Keywords: []string{"base64", "b64"},
+		}},
+	}}}
+
+	results := registry.Search("b64 hello", 10)
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d", len(results))
+	}
+	if results[0].Action.Type != "capability.open" {
+		t.Fatalf("Action.Type = %q", results[0].Action.Type)
+	}
+	if results[0].Action.PluginID != "codec-tools" || results[0].Action.CapabilityID != "base64" {
+		t.Fatalf("Action = %#v", results[0].Action)
+	}
+	if results[0].Action.Query != "b64 hello" {
+		t.Fatalf("Query = %q", results[0].Action.Query)
+	}
+}
+
+func writeBundle(t *testing.T, path string, manifest pluginbundle.Manifest, capabilities []pluginbundle.Capability) {
 	t.Helper()
-	pluginDir := filepath.Join(root, dir)
-	if err := os.MkdirAll(pluginDir, 0o755); err != nil {
+	raw := mustBundle(t, manifest, capabilities)
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(pluginDir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+}
+
+func mustBundle(t *testing.T, manifest pluginbundle.Manifest, capabilities []pluginbundle.Capability) []byte {
+	t.Helper()
+	raw, err := pluginbundle.Build(manifest, capabilities, bundleAssets(capabilities))
+	if err != nil {
 		t.Fatal(err)
 	}
+	return raw
+}
+
+func bundleAssets(capabilities []pluginbundle.Capability) map[string][]byte {
+	assets := map[string][]byte{
+		"/index.html": []byte("<main></main>"),
+	}
+	for _, capability := range capabilities {
+		assets[capability.UI] = []byte("<main>" + capability.ID + "</main>")
+		if capability.Icon != "" {
+			assets[capability.Icon] = []byte("<svg></svg>")
+		}
+	}
+	return assets
 }

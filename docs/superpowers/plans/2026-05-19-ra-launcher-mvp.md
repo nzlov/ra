@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a Wails v3 Linux launcher MVP with application search, calculator results, plugin manifest discovery, and an HTML/WASM plugin package shape.
+**Goal:** Build a Wails v3 Linux launcher MVP with application search, built-in plugin capabilities, plugin manifest discovery, and a single-WASM plugin package shape.
 
-**Architecture:** Keep launcher behavior in small Go packages under `internal/`, expose one Wails service from `internal/app`, and keep the Svelte frontend as a thin search/result view. Plugin execution is deliberately narrow in this pass: manifests and webview entries are discovered and exposed, while WASM host APIs are documented and represented by an example plugin package.
+**Architecture:** Keep launcher behavior in small Go packages under `internal/`, expose one Wails service from `internal/app`, and keep the Svelte frontend as a thin search/result view. Plugin execution is deliberately narrow in this pass: plugin bundles expose manifest, capabilities, permissions, and UI assets through WASM custom sections while richer host APIs are documented for later work.
 
 **Tech Stack:** Go 1.21, Wails v3 alpha.7, Svelte + TypeScript + Vite, Linux desktop entries, local plugin manifests.
 
@@ -33,15 +33,16 @@
 - [ ] Implement desktop entry parsing and search.
 - [ ] Verify with `go test ./internal/desktop`.
 
-### Task 3: Calculator
+### Task 3: Built-In Calculator Plugin
 
 **Files:**
-- Create: `internal/calculator/calculator.go`
-- Create: `internal/calculator/calculator_test.go`
+- Create: `plugins/ra-calculator/manifest.json`
+- Create: `plugins/ra-calculator/capabilities.json`
+- Create: `plugins/ra-calculator/calculator/index.html`
 
-- [ ] Add tests for arithmetic, parentheses, invalid expressions, and query prefix behavior.
-- [ ] Implement a small expression parser for `+ - * /` and parentheses.
-- [ ] Verify with `go test ./internal/calculator`.
+- [ ] Add service tests proving `=` searches open `ra-calculator.calculate`.
+- [ ] Implement calculator UI as plugin assets.
+- [ ] Verify with `go test ./internal/app`.
 
 ### Task 4: Plugin Registry
 
@@ -49,8 +50,8 @@
 - Create: `internal/plugins/plugins.go`
 - Create: `internal/plugins/plugins_test.go`
 
-- [ ] Add tests for valid webview manifests, invalid IDs, missing entries, and command result generation.
-- [ ] Implement manifest loading and validation.
+- [ ] Add tests for valid WASM bundles, invalid IDs, missing capability UI assets, and search result generation.
+- [ ] Implement bundle custom-section loading and validation.
 - [ ] Verify with `go test ./internal/plugins`.
 
 ### Task 5: Launcher Service
@@ -76,15 +77,15 @@
 ### Task 7: Example Plugin and Docs
 
 **Files:**
-- Create: `plugins/example-webview/manifest.json`
-- Create: `plugins/example-webview/index.html`
-- Create: `plugins/example-webview/plugin.js`
-- Create: `plugins/example-webview/wasm/README.md`
+- Create: `examples/codec-tools/manifest.json`
+- Create: `examples/codec-tools/capabilities.json`
+- Create: `examples/codec-tools/base64/index.html`
+- Create: `examples/codec-tools/json-xml/index.html`
 - Create: `docs/plugins.md`
 
-- [ ] Add a page-style plugin package.
-- [ ] Document command and webview plugin contract.
-- [ ] Verify plugin manifests load in Go tests.
+- [ ] Add a source-only multi-capability plugin example.
+- [ ] Document the single-WASM plugin bundle contract.
+- [ ] Verify plugin bundles load in Go tests.
 
 ### Task 8: Final Verification
 

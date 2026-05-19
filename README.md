@@ -1,19 +1,19 @@
 # RA
 
-RA is a Linux-first launcher prototype built with Go and Wails v3. It aims for a small uTools-like workflow: search apps, run quick commands, and expose local plugins.
+RA is a Linux-first launcher prototype built with Go and Wails v3. It aims for a small uTools-like workflow: search apps and open local plugin capabilities.
 
 ## Current MVP
 
 - Scans `.desktop` files from `/usr/share/applications` and `~/.local/share/applications`.
 - Provides app search and launch through the built-in `ra-app-launcher` plugin.
-- Supports calculator queries with `=`, for example `=6*7`.
-- Loads local plugin manifests from `plugins/*/manifest.json`.
-- Also loads user plugins from `~/.local/share/ra/plugins`.
+- Supports calculator queries through the built-in `ra-calculator` plugin, for example `=6*7`.
+- Loads built-in plugins from embedded source under `plugins/`.
+- Loads user plugin packages from `~/.local/share/ra/plugins/*.wasm`.
 - Provides the built-in `ra-plugin-manager` plugin for local plugin install, enable, disable, uninstall, and refresh workflows.
-- Includes a webview plugin package shape with `index.html`, `plugin.js`, and an optional `plugin.wasm`.
-- Opens webview plugin entries through `file://` URLs returned from the Go service.
-- Writes calculator results to the clipboard through `wl-copy` or `xclip` when available.
-- Runs command-style WASM plugins through `wazero` for no-argument `() -> i32` exports.
+- Models plugins as single `.wasm` files with manifest, capabilities, permissions, and UI assets in RA custom sections.
+- Supports capability-level enable and disable.
+- Serves enabled capability UI assets under `/plugins/<plugin-id>/<capability-id>/...` in a sandboxed iframe.
+- Exposes host actions to plugin UIs through a permission-checked `window.ra.invoke()` bridge.
 
 ## Requirements
 
@@ -46,14 +46,13 @@ This machine has `CGO_ENABLED=0` in the Go environment. Wails on Linux needs cgo
 
 ## Plugin Format
 
-See `docs/plugins.md` for the current local plugin contract. RA can open webview plugin entries and run narrow command WASM plugins with a `() -> i32` export.
+See `docs/plugins.md` for the current local plugin contract.
 
-Development plugins can stay in the repository `plugins/` directory. User-installed plugins should live under `~/.local/share/ra/plugins/<plugin-id>/`.
+Built-in plugin source lives in the repository `plugins/` directory. Demo plugin source lives under `examples/`. User-installed plugin packages should live under `~/.local/share/ra/plugins/<plugin-id>.wasm`.
 
-Plugin enable/disable state is stored in `~/.config/ra/plugins.json`. The plugin manager can disable built-in plugins such as `ra-app-launcher`, but it only uninstalls user plugins and refuses to disable or uninstall itself.
+Plugin and capability enable/disable state is stored in `~/.config/ra/plugins.json`. The plugin manager can disable built-in plugins such as `ra-app-launcher`, but it only uninstalls user plugin files and refuses to disable or uninstall its own management capability.
 
 ## Next Steps
 
 - Add explicit host APIs for clipboard, storage, app launch, and result rendering.
-- Expand the command WASM ABI beyond `() -> i32`.
 - Add Niri-friendly show/hide integration and document a compositor keybinding.

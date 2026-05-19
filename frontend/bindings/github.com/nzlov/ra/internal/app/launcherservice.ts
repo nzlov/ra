@@ -7,20 +7,22 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as desktop$0 from "../desktop/models.js";
-
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
-export function InstallPlugin(sourceDir: string): $CancellablePromise<$models.InstallPluginResult> {
-    return $Call.ByID(3785730508, sourceDir).then(($result: any) => {
+export function InstallPlugin(sourcePath: string): $CancellablePromise<$models.InstallPluginResult> {
+    return $Call.ByID(3785730508, sourcePath).then(($result: any) => {
         return $$createType0($result);
     });
 }
 
 export function Invoke(action: $models.Action): $CancellablePromise<$models.InvokeResult> {
     return $Call.ByID(2371333820, action).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
+export function InvokePluginAction(request: $models.PluginActionRequest): $CancellablePromise<$models.InvokeResult> {
+    return $Call.ByID(270666357, request).then(($result: any) => {
         return $$createType1($result);
     });
 }
@@ -45,8 +47,10 @@ export function Search(query: string): $CancellablePromise<$models.Result[]> {
     });
 }
 
-export function SetDesktopEntries(entries: desktop$0.Entry[]): $CancellablePromise<void> {
-    return $Call.ByID(1609435692, entries);
+export function SetCapabilityEnabled(pluginID: string, capabilityID: string, enabled: boolean): $CancellablePromise<$models.PluginManagerState> {
+    return $Call.ByID(1132286559, pluginID, capabilityID, enabled).then(($result: any) => {
+        return $$createType2($result);
+    });
 }
 
 export function SetPluginEnabled(id: string, enabled: boolean): $CancellablePromise<$models.PluginManagerState> {
