@@ -77,14 +77,98 @@
         if (!expression) {
           return '';
         }
-        if (!/^[0-9+\-*/().\s]+$/.test(expression)) {
-          return 'Invalid expression';
-        }
         try {
-          const answer = Function(`"use strict"; return (${expression})`)();
-          return Number.isFinite(answer) ? String(answer) : 'Invalid expression';
+          const parser = new Parser(expression);
+          const answer = parser.expression();
+          parser.skipSpaces();
+          if (parser.position !== parser.input.length || !Number.isFinite(answer)) {
+            return 'Invalid expression';
+          }
+          return String(answer);
         } catch {
           return 'Invalid expression';
+        }
+      }
+
+      class Parser {
+        constructor(input) {
+          this.input = input;
+          this.position = 0;
+        }
+
+        expression() {
+          let value = this.term();
+          while (true) {
+            if (this.match('+')) {
+              value += this.term();
+            } else if (this.match('-')) {
+              value -= this.term();
+            } else {
+              return value;
+            }
+          }
+        }
+
+        term() {
+          let value = this.factor();
+          while (true) {
+            if (this.match('*')) {
+              value *= this.factor();
+            } else if (this.match('/')) {
+              value /= this.factor();
+            } else {
+              return value;
+            }
+          }
+        }
+
+        factor() {
+          this.skipSpaces();
+          if (this.match('+')) {
+            return this.factor();
+          }
+          if (this.match('-')) {
+            return -this.factor();
+          }
+          if (this.match('(')) {
+            const value = this.expression();
+            if (!this.match(')')) {
+              throw new Error('missing closing parenthesis');
+            }
+            return value;
+          }
+          return this.number();
+        }
+
+        number() {
+          this.skipSpaces();
+          const start = this.position;
+          while (this.position < this.input.length && /[0-9.]/.test(this.input[this.position])) {
+            this.position += 1;
+          }
+          if (start === this.position) {
+            throw new Error('missing number');
+          }
+          const raw = this.input.slice(start, this.position);
+          if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw)) {
+            throw new Error('invalid number');
+          }
+          return Number(raw);
+        }
+
+        match(token) {
+          this.skipSpaces();
+          if (this.input[this.position] !== token) {
+            return false;
+          }
+          this.position += 1;
+          return true;
+        }
+
+        skipSpaces() {
+          while (this.position < this.input.length && /\s/.test(this.input[this.position])) {
+            this.position += 1;
+          }
         }
       }
 

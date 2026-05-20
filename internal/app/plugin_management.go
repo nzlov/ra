@@ -69,7 +69,9 @@ type PluginConfig struct {
 
 func (s *LauncherService) PluginManagerState() PluginManagerState {
 	state := PluginManagerState{
-		PluginRoots:      append([]string(nil), s.config.PluginRoots...),
+		Plugins:          []ManagedPlugin{},
+		LoadErrors:       []ManagedLoadError{},
+		PluginRoots:      append([]string{}, s.config.PluginRoots...),
 		UserPluginRoot:   s.config.UserPluginRoot,
 		PluginConfigPath: s.config.PluginConfigPath,
 	}
@@ -245,7 +247,7 @@ func managedPlugin(plugin plugins.Plugin) ManagedPlugin {
 			Title:    capability.Title,
 			Icon:     capability.Icon,
 			UI:       capability.UI,
-			Keywords: append([]string(nil), capability.Keywords...),
+			Keywords: append([]string{}, capability.Keywords...),
 			Enabled:  !capability.Disabled,
 		})
 	}
@@ -256,7 +258,7 @@ func managedPlugin(plugin plugins.Plugin) ManagedPlugin {
 		Version:       plugin.Version,
 		Source:        plugin.Source,
 		Path:          plugin.Path,
-		Permissions:   append([]string(nil), plugin.Permissions...),
+		Permissions:   append([]string{}, plugin.Permissions...),
 		Capabilities:  capabilities,
 		Enabled:       !plugin.Disabled,
 		Protected:     protected,

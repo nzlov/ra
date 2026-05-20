@@ -324,6 +324,40 @@ func TestPluginManagerStateIncludesLoadErrorsAndIDConflicts(t *testing.T) {
 	}
 }
 
+func TestPluginManagerStateMarshalsEmptyCollectionsAsArrays(t *testing.T) {
+	root := t.TempDir()
+	user := filepath.Join(root, "user")
+	configPath := filepath.Join(root, "config", "plugins.json")
+
+	service := NewLauncherService(Config{
+		PluginRoots:      []string{user},
+		UserPluginRoot:   user,
+		PluginConfigPath: configPath,
+		BuiltinPlugins:   builtinTestPlugins(t),
+	})
+	if err := service.RefreshPlugins(); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := json.Marshal(service.PluginManagerState())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	if strings.Contains(body, `"loadErrors":null`) {
+		t.Fatalf("loadErrors marshaled as null: %s", body)
+	}
+	if strings.Contains(body, `"permissions":null`) {
+		t.Fatalf("permissions marshaled as null: %s", body)
+	}
+	if strings.Contains(body, `"keywords":null`) {
+		t.Fatalf("keywords marshaled as null: %s", body)
+	}
+	if !strings.Contains(body, `"loadErrors":[]`) {
+		t.Fatalf("loadErrors did not marshal as array: %s", body)
+	}
+}
+
 func findManagedPlugin(t *testing.T, state PluginManagerState, id string) ManagedPlugin {
 	t.Helper()
 	for _, plugin := range state.Plugins {

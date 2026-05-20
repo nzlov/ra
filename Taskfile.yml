@@ -150,8 +150,17 @@ tasks:
     env:
       GOOS: linux
       CGO_ENABLED: 1
+      GOCACHE: '{{.GOCACHE | default "/tmp/ra-go-cache"}}'
       GOARCH: '{{.ARCH | default ARCH}}'
       PRODUCTION: '{{.PRODUCTION | default "false"}}'
+
+  linux:build:
+    summary: Builds the application for Linux
+    cmds:
+      - task: build:linux
+        vars:
+          ARCH: '{{.ARCH}}'
+          PRODUCTION: '{{.PRODUCTION}}'
 
   build:linux:prod:arm64:
     summary: Creates a production build of the application
@@ -298,6 +307,13 @@ tasks:
     cmds:
       - task: create:appimage
 
+  linux:package:
+    summary: Packages a production build of the application for Linux
+    cmds:
+      - task: package:linux
+        vars:
+          ARCH: '{{.ARCH}}'
+
   create:appimage:
     summary: Creates an AppImage
     dir: build/appimage
@@ -414,6 +430,9 @@ tasks:
       - go.sum
     generates:
       - "frontend/bindings/**/*"
+    env:
+      CGO_ENABLED: 1
+      GOCACHE: '{{.GOCACHE | default "/tmp/ra-go-cache"}}'
     cmds:
       # For a complete list of options, run `wails3 generate bindings -help`
       - wails3 generate bindings -f '{{.BUILD_FLAGS}}' -ts

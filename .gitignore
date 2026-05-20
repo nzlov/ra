@@ -1,7 +1,6 @@
 /.task/
 /bin/
-/build/icon.ico
-/build/icons.icns
+/build
 /frontend/dist/
 /frontend/node_modules/
 /plugins/builtins_data.go
