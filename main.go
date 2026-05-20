@@ -17,6 +17,8 @@ import (
 var assets embed.FS
 
 func main() {
+	configureWebKitEnvironment()
+
 	launcher := app.NewDefaultLauncherService()
 
 	wailsApp := application.New(application.Options{
