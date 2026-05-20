@@ -1,6 +1,10 @@
 package main
 
-import "github.com/nzlov/ra/pkg/raplugin"
+import (
+	"strings"
+
+	"github.com/nzlov/ra/pkg/raplugin"
+)
 
 func init() {
 	raplugin.Register(raplugin.Plugin{
@@ -20,9 +24,15 @@ func init() {
 			"/apps/index.html": []byte("<main>apps</main>"),
 		},
 		Search: func(request raplugin.SearchRequest) []raplugin.SearchResult {
+			apps, err := raplugin.AppsList()
+			if err != nil {
+				return nil
+			}
 			var results []raplugin.SearchResult
-			for _, app := range request.Apps {
-				if !raplugin.Matches(app.Name+" "+app.Comment, request.Query) {
+			query := strings.ToLower(strings.TrimSpace(request.Query))
+			for _, app := range apps {
+				haystack := strings.ToLower(app.Name + " " + app.Comment)
+				if query != "" && !strings.Contains(haystack, query) {
 					continue
 				}
 				results = append(results, raplugin.SearchResult{
@@ -33,8 +43,6 @@ func init() {
 					Action: raplugin.Action{
 						Type:         "app.launch",
 						AppID:        app.ID,
-						Command:      app.Command,
-						PluginID:     "ra-app-launcher",
 						CapabilityID: "apps",
 					},
 				})

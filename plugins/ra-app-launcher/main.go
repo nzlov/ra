@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"strings"
 
 	"github.com/nzlov/ra/pkg/raplugin"
 )
@@ -30,9 +31,14 @@ func init() {
 }
 
 func searchApps(request raplugin.SearchRequest) []raplugin.SearchResult {
+	apps, err := raplugin.AppsList()
+	if err != nil {
+		return nil
+	}
+	query := strings.ToLower(strings.TrimSpace(request.Query))
 	var results []raplugin.SearchResult
-	for _, app := range request.Apps {
-		if !raplugin.Matches(app.Name+" "+app.Comment, request.Query) {
+	for _, app := range apps {
+		if !matchesApp(app, query) {
 			continue
 		}
 		results = append(results, raplugin.SearchResult{
@@ -43,13 +49,24 @@ func searchApps(request raplugin.SearchRequest) []raplugin.SearchResult {
 			Action: raplugin.Action{
 				Type:         "app.launch",
 				AppID:        app.ID,
-				Command:      app.Command,
-				PluginID:     "ra-app-launcher",
 				CapabilityID: "apps",
 			},
 		})
 	}
 	return results
+}
+
+func matchesApp(app raplugin.App, query string) bool {
+	if query == "" {
+		return true
+	}
+	haystack := strings.ToLower(app.Name + " " + app.Comment)
+	for _, token := range strings.Fields(query) {
+		if !strings.Contains(haystack, token) {
+			return false
+		}
+	}
+	return true
 }
 
 func main() {}

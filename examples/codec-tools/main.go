@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"strings"
 
 	"github.com/nzlov/ra/pkg/raplugin"
 )
@@ -34,7 +35,35 @@ func init() {
 			},
 		},
 		Assets: raplugin.MustAssets(assets, "assets"),
+		Search: search,
 	})
+}
+
+func search(request raplugin.SearchRequest) []raplugin.SearchResult {
+	query := strings.ToLower(strings.TrimSpace(request.Query))
+	capabilityID := ""
+	title := ""
+	switch {
+	case strings.Contains(query, "base64") || strings.Contains(query, "b64"):
+		capabilityID = "base64"
+		title = "Base64 Convert"
+	case strings.Contains(query, "json") || strings.Contains(query, "xml"):
+		capabilityID = "json-xml"
+		title = "JSON to XML"
+	default:
+		return nil
+	}
+	return []raplugin.SearchResult{{
+		ID:       "capability:codec-tools:" + capabilityID,
+		Title:    title,
+		Subtitle: "Codec Tools",
+		Kind:     "capability",
+		Action: raplugin.Action{
+			Type:         "capability.open",
+			CapabilityID: capabilityID,
+			Query:        request.Query,
+		},
+	}}
 }
 
 func main() {}

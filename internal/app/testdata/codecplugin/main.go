@@ -1,6 +1,10 @@
 package main
 
-import "github.com/nzlov/ra/pkg/raplugin"
+import (
+	"strings"
+
+	"github.com/nzlov/ra/pkg/raplugin"
+)
 
 func init() {
 	raplugin.Register(raplugin.Plugin{
@@ -30,7 +34,35 @@ func init() {
 			"/json/index.html":   []byte("<main>json</main>"),
 			"/icons/base64.svg":  []byte("<svg></svg>"),
 		},
+		Search: search,
 	})
+}
+
+func search(request raplugin.SearchRequest) []raplugin.SearchResult {
+	query := strings.ToLower(strings.TrimSpace(request.Query))
+	capabilityID := ""
+	title := ""
+	switch {
+	case strings.Contains(query, "base64") || strings.Contains(query, "b64"):
+		capabilityID = "base64"
+		title = "Base64 Convert"
+	case strings.Contains(query, "json"):
+		capabilityID = "json"
+		title = "JSON Convert"
+	default:
+		return nil
+	}
+	return []raplugin.SearchResult{{
+		ID:       "capability:codec-tools:" + capabilityID,
+		Title:    title,
+		Subtitle: "Codec Tools",
+		Kind:     "capability",
+		Action: raplugin.Action{
+			Type:         "capability.open",
+			CapabilityID: capabilityID,
+			Query:        request.Query,
+		},
+	}}
 }
 
 func main() {}

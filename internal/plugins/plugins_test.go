@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/nzlov/ra/pkg/raplugin"
@@ -41,6 +42,8 @@ func TestLoadRegistryRejectsInvalidWASMAndIDConflicts(t *testing.T) {
 	root := t.TempDir()
 	writeTestPlugin(t, root, "first", "./internal/plugins/testdata/sharedone")
 	writeTestPlugin(t, root, "second", "./internal/plugins/testdata/sharedtwo")
+	writeTestPlugin(t, root, "invalid-id", "./internal/plugins/testdata/invalidid")
+	writeTestPlugin(t, root, "missing-ui", "./internal/plugins/testdata/missinguibundle")
 	if err := os.WriteFile(filepath.Join(root, "bad.wasm"), []byte("bad"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -52,8 +55,14 @@ func TestLoadRegistryRejectsInvalidWASMAndIDConflicts(t *testing.T) {
 	if len(registry.Plugins) != 1 {
 		t.Fatalf("len(Plugins) = %d", len(registry.Plugins))
 	}
-	if len(registry.Errors) != 2 {
+	if len(registry.Errors) != 4 {
 		t.Fatalf("len(Errors) = %d: %#v", len(registry.Errors), registry.Errors)
+	}
+	if !hasLoadError(registry.Errors, "invalid plugin id") {
+		t.Fatalf("missing invalid id error: %#v", registry.Errors)
+	}
+	if !hasLoadError(registry.Errors, "missing capability UI asset") {
+		t.Fatalf("missing UI asset error: %#v", registry.Errors)
 	}
 }
 
@@ -87,12 +96,11 @@ func TestSearchCallsPluginSearch(t *testing.T) {
 	results := registry.SearchWithContext(SearchRequest{
 		Query: "fire",
 		Limit: 10,
-		Apps: []raplugin.App{{
+		HostAPI: HostAPI{Apps: []raplugin.App{{
 			ID:      "firefox",
 			Name:    "Firefox",
 			Comment: "Browser",
-			Command: "firefox",
-		}},
+		}}},
 	})
 	if len(results) != 1 {
 		t.Fatalf("len(results) = %d", len(results))
@@ -102,6 +110,30 @@ func TestSearchCallsPluginSearch(t *testing.T) {
 	}
 	if results[0].Action.PluginID != "ra-app-launcher" || results[0].Action.CapabilityID != "apps" {
 		t.Fatalf("Action = %#v", results[0].Action)
+	}
+}
+
+func TestSearchStampsPluginOwnedActionMetadata(t *testing.T) {
+	plugin := Plugin{
+		ID: "trusted-plugin",
+		Capabilities: []Capability{{
+			ID: "main",
+			UI: "/trusted/index.html",
+		}},
+	}
+
+	result := resultFromPlugin(plugin, raplugin.SearchResult{
+		Action: raplugin.Action{
+			Type:         "capability.open",
+			CapabilityID: "main",
+		},
+	}, "query")
+
+	if result.Action.PluginID != "trusted-plugin" {
+		t.Fatalf("PluginID = %q", result.Action.PluginID)
+	}
+	if result.Action.UI != "/trusted/index.html" {
+		t.Fatalf("UI = %q", result.Action.UI)
 	}
 }
 
@@ -148,4 +180,13 @@ func repoRootForTest(t *testing.T) string {
 		t.Fatal("resolve test file")
 	}
 	return filepath.Dir(filepath.Dir(filepath.Dir(file)))
+}
+
+func hasLoadError(errors []LoadError, needle string) bool {
+	for _, item := range errors {
+		if strings.Contains(item.Error, needle) {
+			return true
+		}
+	}
+	return false
 }

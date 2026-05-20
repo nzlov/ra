@@ -67,14 +67,16 @@ GOOS=wasip1 GOARCH=wasm go build -buildvcs=false -buildmode=c-shared -o codec-to
 
 ## Search And Launch
 
-RA asks each enabled plugin to search. `raplugin.DefaultSearch` searches the plugin's capabilities, while plugins can provide a custom `Search` function for richer behavior. `ra-app-launcher` uses this to search the app list supplied by RA as a controlled API input; app discovery and command validation stay in RA core.
+RA asks each enabled plugin to search by calling its `Search` function with the query and limit. RA does not implement default capability search and does not push app data into the search request. Each plugin owns its trigger rules, matching, ranking, and result construction.
+
+Plugins call RA host APIs when they need controlled system data. `ra-app-launcher` declares `apps:read`, calls `raplugin.AppsList()` from inside its search function, filters the returned apps itself, and returns `app.launch` results containing only an `appId`. App discovery and launch command resolution stay in RA core.
 
 When a capability matches a query, the plugin returns a `capability.open` action with:
 
-- `pluginId`
 - `capabilityId`
-- `ui`
 - `query`
+
+RA stamps the result with the plugin ID currently being executed and the UI path from the matching capability manifest, so a plugin cannot claim another plugin's identity or point a result at another capability UI.
 
 The launcher can pass the query into the capability UI so a plugin such as `codec-tools` can route `base64 hello` directly into its Base64 interface.
 
@@ -95,6 +97,8 @@ await window.ra.invoke({type: 'clipboard.write', text: 'copied text'});
 RA accepts only supported host actions through this bridge, checks that the plugin and capability are still enabled, and then checks the plugin's declared permissions. Current permissions:
 
 - `clipboard:write`: allows `{type: 'clipboard.write', text: string}`.
+- `apps:read`: allows `raplugin.AppsList()` from WASM search code.
+- `apps:launch`: allows `{type: 'app.launch', appId: string}`. RA ignores plugin-supplied commands and launches the command from its own loaded app list.
 
 Use relative URLs from the capability page for packaged assets. RA resolves `/plugins/<plugin-id>/<capability-id>/icons/codec.svg` to the package asset `/icons/codec.svg`, so a page at `/base64/index.html` can load `../icons/codec.svg`. HTML assets are capability-scoped: RA serves the current capability UI and files under that UI directory, but it will not serve another capability's HTML page through the current capability route.
 

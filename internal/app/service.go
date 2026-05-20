@@ -47,7 +47,6 @@ type Result struct {
 type Action struct {
 	Type         string `json:"type"`
 	AppID        string `json:"appId,omitempty"`
-	Command      string `json:"command,omitempty"`
 	Text         string `json:"text,omitempty"`
 	PluginID     string `json:"pluginId,omitempty"`
 	CapabilityID string `json:"capabilityId,omitempty"`
@@ -164,7 +163,6 @@ func (s *LauncherService) Search(query string) []Result {
 			Action: Action{
 				Type:         actionType(result),
 				AppID:        result.Action.AppID,
-				Command:      result.Action.Command,
 				Text:         result.Action.Text,
 				PluginID:     result.Action.PluginID,
 				CapabilityID: result.Action.CapabilityID,
@@ -179,24 +177,18 @@ func (s *LauncherService) Search(query string) []Result {
 func (s *LauncherService) searchPlugins(query string, limit int) []plugins.Result {
 	registry := s.pluginRegistry
 	return registry.SearchWithContext(plugins.SearchRequest{
-		Query: query,
-		Limit: limit,
-		Apps:  desktopEntriesForPlugins(s.desktopEntries),
+		Query:   query,
+		Limit:   limit,
+		HostAPI: plugins.HostAPI{Apps: desktopEntriesForPlugins(s.desktopEntries)},
 	})
 }
 
 func (s *LauncherService) Invoke(action Action) (InvokeResult, error) {
 	if action.Type == "app.launch" {
-		entry, ok := s.findDesktopEntry(action.AppID)
-		if !ok {
-			return InvokeResult{}, fmt.Errorf("app %q is not loaded", action.AppID)
-		}
-		if !s.capabilityEnabled(appLauncherPluginID, "apps") {
-			return InvokeResult{}, fmt.Errorf("capability %q.%q is not loaded", appLauncherPluginID, "apps")
-		}
-		if action.Command != entry.LaunchCommand() {
-			return InvokeResult{}, errors.New("launch command does not match loaded app")
-		}
+		return InvokeResult{}, errors.New("app.launch is only available to plugin capabilities")
+	}
+	if action.Type == "app.launch.command" {
+		return InvokeResult{}, errors.New("app.launch.command is internal")
 	}
 	if action.Type == "clipboard.write" {
 		return InvokeResult{}, errors.New("clipboard.write is only available to plugin capabilities")
@@ -219,10 +211,21 @@ func (s *LauncherService) InvokePluginAction(request PluginActionRequest) (Invok
 	if !containsString(plugin.Permissions, permission) {
 		return InvokeResult{}, errMissingPluginPermission(plugin.ID, permission)
 	}
-	if result, ok, err := s.invokePluginManagerAction(request.Action); ok {
+	action, err := bindPluginAction(request)
+	if err != nil {
+		return InvokeResult{}, err
+	}
+	if result, ok, err := s.invokePluginManagerAction(action); ok {
 		return result, err
 	}
-	return s.actions.Invoke(request.Action)
+	if action.Type == "app.launch" {
+		entry, ok := s.findDesktopEntry(action.AppID)
+		if !ok {
+			return InvokeResult{}, fmt.Errorf("app %q is not loaded", action.AppID)
+		}
+		return s.actions.Invoke(Action{Type: "app.launch.command", Text: entry.LaunchCommand()})
+	}
+	return s.actions.Invoke(action)
 }
 
 func (s *LauncherService) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
@@ -321,7 +324,6 @@ func desktopEntriesForPlugins(entries []desktop.Entry) []raplugin.App {
 			ID:      entry.ID,
 			Name:    entry.Name,
 			Comment: entry.Comment,
-			Command: entry.LaunchCommand(),
 		})
 	}
 	return apps
@@ -407,6 +409,8 @@ func permissionForAction(actionType string) (string, bool) {
 	switch actionType {
 	case "clipboard.write":
 		return "clipboard:write", true
+	case "app.launch":
+		return "apps:launch", true
 	case "plugins.state", "plugins.install", "plugins.setEnabled", "plugins.setCapabilityEnabled", "plugins.uninstall", "plugins.refresh":
 		return "plugins:manage", true
 	default:
@@ -431,6 +435,19 @@ func errUnsupportedPluginAction(actionType string) error {
 		return errors.New("missing plugin action type")
 	}
 	return fmt.Errorf("plugin action %q is not supported", actionType)
+}
+
+func bindPluginAction(request PluginActionRequest) (Action, error) {
+	action := request.Action
+	if action.PluginID != "" && action.PluginID != request.PluginID {
+		return Action{}, fmt.Errorf("plugin action source %q does not match %q", action.PluginID, request.PluginID)
+	}
+	if action.CapabilityID != "" && action.CapabilityID != request.CapabilityID {
+		return Action{}, fmt.Errorf("plugin action capability %q does not match %q", action.CapabilityID, request.CapabilityID)
+	}
+	action.PluginID = request.PluginID
+	action.CapabilityID = request.CapabilityID
+	return action, nil
 }
 
 func (s *LauncherService) invokePluginManagerAction(action Action) (InvokeResult, bool, error) {

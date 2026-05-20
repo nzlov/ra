@@ -5,7 +5,6 @@
   type Action = {
     type: string;
     appId?: string;
-    command?: string;
     text?: string;
     pluginId?: string;
     capabilityId?: string;
@@ -88,7 +87,13 @@
       return;
     }
     try {
-      const response = await LauncherService.Invoke(result.action);
+      const response = result.action.pluginId && result.action.capabilityId
+        ? await LauncherService.InvokePluginAction({
+            pluginId: result.action.pluginId,
+            capabilityId: result.action.capabilityId,
+            action: result.action
+          })
+        : await LauncherService.Invoke(result.action);
       status = response.message || response.type;
     } catch (error) {
       status = `${result.action.type}: ${result.title}`;

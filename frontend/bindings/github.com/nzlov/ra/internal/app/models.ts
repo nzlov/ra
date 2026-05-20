@@ -8,7 +8,6 @@ import { Create as $Create } from "@wailsio/runtime";
 export class Action {
     "type": string;
     "appId"?: string;
-    "command"?: string;
     "text"?: string;
     "pluginId"?: string;
     "capabilityId"?: string;

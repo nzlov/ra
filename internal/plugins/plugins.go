@@ -1,15 +1,20 @@
 package plugins
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/nzlov/ra/internal/pluginruntime"
 	"github.com/nzlov/ra/pkg/raplugin"
 )
+
+var idPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-_.]*$`)
 
 type Registry struct {
 	Root    string
@@ -66,7 +71,6 @@ type Result struct {
 type Action struct {
 	Type         string `json:"type"`
 	AppID        string `json:"appId,omitempty"`
-	Command      string `json:"command,omitempty"`
 	Text         string `json:"text,omitempty"`
 	PluginID     string `json:"pluginId"`
 	CapabilityID string `json:"capabilityId,omitempty"`
@@ -75,9 +79,13 @@ type Action struct {
 }
 
 type SearchRequest struct {
-	Query string
-	Limit int
-	Apps  []raplugin.App
+	Query   string
+	Limit   int
+	HostAPI HostAPI
+}
+
+type HostAPI struct {
+	Apps []raplugin.App
 }
 
 func LoadRegistry(root string) (Registry, error) {
@@ -188,7 +196,9 @@ func (r Registry) SearchWithContext(request SearchRequest) []Result {
 		pluginResults, err := pluginruntime.Search(plugin.Raw, raplugin.SearchRequest{
 			Query: trimmed,
 			Limit: request.Limit,
-			Apps:  append([]raplugin.App(nil), request.Apps...),
+		}, pluginruntime.HostAPI{
+			Permissions: append([]string(nil), plugin.Permissions...),
+			Apps:        append([]raplugin.App(nil), request.HostAPI.Apps...),
 		})
 		if err != nil {
 			continue
@@ -222,15 +232,10 @@ func resultFromPlugin(plugin Plugin, result raplugin.SearchResult, query string)
 	action := Action{
 		Type:         result.Action.Type,
 		AppID:        result.Action.AppID,
-		Command:      result.Action.Command,
 		Text:         result.Action.Text,
-		PluginID:     result.Action.PluginID,
+		PluginID:     plugin.ID,
 		CapabilityID: result.Action.CapabilityID,
-		UI:           result.Action.UI,
 		Query:        result.Action.Query,
-	}
-	if action.PluginID == "" {
-		action.PluginID = plugin.ID
 	}
 	if action.Query == "" {
 		action.Query = query
@@ -238,10 +243,8 @@ func resultFromPlugin(plugin Plugin, result raplugin.SearchResult, query string)
 	if action.Type == "" {
 		action.Type = "capability.open"
 	}
-	if action.UI == "" {
-		if capability, ok := findCapability(plugin.Capabilities, action.CapabilityID); ok {
-			action.UI = capability.UI
-		}
+	if capability, ok := findCapability(plugin.Capabilities, action.CapabilityID); ok {
+		action.UI = capability.UI
 	}
 	id := result.ID
 	if id == "" {
@@ -286,6 +289,9 @@ func loadWASMBytes(raw []byte, source string, sourcePath string) (Plugin, error)
 	if err != nil {
 		return Plugin{}, err
 	}
+	if err := validateBundle(bundle); err != nil {
+		return Plugin{}, err
+	}
 	return Plugin{
 		ID:           bundle.Manifest.ID,
 		Name:         bundle.Manifest.Name,
@@ -297,6 +303,48 @@ func loadWASMBytes(raw []byte, source string, sourcePath string) (Plugin, error)
 		Source:       source,
 		Path:         sourcePath,
 	}, nil
+}
+
+func validateBundle(bundle pluginruntime.Plugin) error {
+	if !validID(bundle.Manifest.ID) {
+		return fmt.Errorf("invalid plugin id %q", bundle.Manifest.ID)
+	}
+	if strings.TrimSpace(bundle.Manifest.Name) == "" {
+		return errors.New("missing plugin name")
+	}
+	seenCapabilities := map[string]struct{}{}
+	for _, capability := range bundle.Capabilities {
+		if !validID(capability.ID) {
+			return fmt.Errorf("invalid capability id %q", capability.ID)
+		}
+		if _, ok := seenCapabilities[capability.ID]; ok {
+			return fmt.Errorf("duplicate capability id %q", capability.ID)
+		}
+		seenCapabilities[capability.ID] = struct{}{}
+		if !validAssetPath(capability.UI) || path.Ext(capability.UI) != ".html" {
+			return fmt.Errorf("invalid capability UI path %q", capability.UI)
+		}
+		if _, ok := bundle.Assets[capability.UI]; !ok {
+			return fmt.Errorf("missing capability UI asset %q", capability.UI)
+		}
+		if capability.Icon != "" && !validAssetPath(capability.Icon) {
+			return fmt.Errorf("invalid capability icon path %q", capability.Icon)
+		}
+	}
+	for assetPath := range bundle.Assets {
+		if !validAssetPath(assetPath) {
+			return fmt.Errorf("invalid asset path %q", assetPath)
+		}
+	}
+	return nil
+}
+
+func validID(id string) bool {
+	return idPattern.MatchString(id)
+}
+
+func validAssetPath(assetPath string) bool {
+	return strings.HasPrefix(assetPath, "/") && path.Clean(assetPath) == assetPath && !strings.Contains(assetPath, "\x00")
 }
 
 func capabilitiesFromBundle(items []raplugin.Capability) []Capability {

@@ -392,9 +392,53 @@ func TestPluginInvokeAllowsDeclaredPermissionForEnabledCapability(t *testing.T) 
 	}
 }
 
-func TestPluginInvokeRejectsAppLaunchCommand(t *testing.T) {
+func TestPluginInvokeRejectsMismatchedActionCapability(t *testing.T) {
 	root := t.TempDir()
 	user := filepath.Join(root, "user")
+	configPath := filepath.Join(root, "config", "plugins.json")
+	writeCodecPlugin(t, user)
+
+	service := NewLauncherService(Config{
+		PluginRoots:      []string{user},
+		UserPluginRoot:   user,
+		PluginConfigPath: configPath,
+		BuiltinPlugins:   builtinTestPlugins(t),
+	})
+	service.actions = ActionExecutor{
+		ClipboardCommand: []string{"copy"},
+		RunCommand: func(command string, args []string, stdin string) error {
+			t.Fatalf("unexpected host command %s", command)
+			return nil
+		},
+	}
+	if err := service.RefreshPlugins(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := service.SetCapabilityEnabled("codec-tools", "json", false); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := service.InvokePluginAction(PluginActionRequest{
+		PluginID:     "codec-tools",
+		CapabilityID: "base64",
+		Action: Action{
+			Type:         "clipboard.write",
+			Text:         "copied",
+			PluginID:     "ra-plugin-manager",
+			CapabilityID: "json",
+		},
+	})
+	if err == nil {
+		t.Fatal("expected mismatched capability rejection")
+	}
+}
+
+func TestPluginInvokeLaunchesLoadedAppByIDOnly(t *testing.T) {
+	root := t.TempDir()
+	user := filepath.Join(root, "user")
+	var gotCommand string
+	var gotArgs []string
 	writeCodecPluginAppLaunch(t, user)
 
 	service := NewLauncherService(Config{
@@ -404,24 +448,29 @@ func TestPluginInvokeRejectsAppLaunchCommand(t *testing.T) {
 	})
 	service.actions = ActionExecutor{
 		RunCommand: func(command string, args []string, stdin string) error {
-			t.Fatalf("unexpected command execution: %s %#v", command, args)
+			gotCommand = command
+			gotArgs = append([]string(nil), args...)
 			return nil
 		},
 	}
+	service.setDesktopEntries([]desktop.Entry{{ID: "firefox", Name: "Firefox", Exec: "firefox %U"}})
 	if err := service.RefreshPlugins(); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err := service.InvokePluginAction(PluginActionRequest{
+	result, err := service.InvokePluginAction(PluginActionRequest{
 		PluginID:     "codec-tools",
 		CapabilityID: "base64",
-		Action:       Action{Type: "app.launch", Command: "sh -lc 'touch /tmp/ra-owned'"},
+		Action:       Action{Type: "app.launch", AppID: "firefox"},
 	})
-	if err == nil {
-		t.Fatal("expected app.launch bridge rejection")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := err.Error(); got != `plugin action "app.launch" is not supported` {
-		t.Fatalf("error = %q", got)
+	if result.Message != "launched" {
+		t.Fatalf("result = %#v", result)
+	}
+	if gotCommand != "sh" || len(gotArgs) != 2 || gotArgs[0] != "-lc" || gotArgs[1] != "firefox" {
+		t.Fatalf("run = %q %#v", gotCommand, gotArgs)
 	}
 }
 
@@ -447,7 +496,11 @@ func TestInvokeLaunchesLoadedDesktopEntryOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := service.Invoke(Action{Type: "app.launch", AppID: "firefox", Command: "firefox"})
+	result, err := service.InvokePluginAction(PluginActionRequest{
+		PluginID:     "ra-app-launcher",
+		CapabilityID: "apps",
+		Action:       Action{Type: "app.launch", AppID: "firefox"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -458,10 +511,17 @@ func TestInvokeLaunchesLoadedDesktopEntryOnly(t *testing.T) {
 		t.Fatalf("run = %q %#v", gotCommand, gotArgs)
 	}
 
-	if _, err := service.Invoke(Action{Type: "app.launch", AppID: "firefox", Command: "sh -lc 'touch /tmp/ra-owned'"}); err == nil {
-		t.Fatal("expected mismatched command rejection")
+	if _, err := service.Invoke(Action{Type: "app.launch", AppID: "firefox"}); err == nil {
+		t.Fatal("expected direct app launch rejection")
 	}
-	if _, err := service.Invoke(Action{Type: "app.launch", AppID: "unknown", Command: "firefox"}); err == nil {
+	if _, err := service.Invoke(Action{Type: "app.launch.command", Text: "firefox"}); err == nil {
+		t.Fatal("expected direct app launch command rejection")
+	}
+	if _, err := service.InvokePluginAction(PluginActionRequest{
+		PluginID:     "ra-app-launcher",
+		CapabilityID: "apps",
+		Action:       Action{Type: "app.launch", AppID: "unknown"},
+	}); err == nil {
 		t.Fatal("expected unknown app rejection")
 	}
 	if _, err := service.Invoke(Action{Type: "clipboard.write", Text: "secret"}); err == nil {
@@ -493,7 +553,11 @@ func TestInvokeRejectsAppLaunchWhenAppLauncherDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := service.Invoke(Action{Type: "app.launch", AppID: "firefox", Command: "firefox"}); err == nil {
+	if _, err := service.InvokePluginAction(PluginActionRequest{
+		PluginID:     "ra-app-launcher",
+		CapabilityID: "apps",
+		Action:       Action{Type: "app.launch", AppID: "firefox"},
+	}); err == nil {
 		t.Fatal("expected disabled app launcher rejection")
 	}
 }

@@ -20,9 +20,13 @@ func init() {
 			"/apps/index.html": []byte("<main>apps</main>"),
 		},
 		Search: func(request raplugin.SearchRequest) []raplugin.SearchResult {
+			apps, err := raplugin.AppsList()
+			if err != nil {
+				return nil
+			}
 			var results []raplugin.SearchResult
-			for _, app := range request.Apps {
-				if !raplugin.Matches(app.Name+" "+app.Comment, request.Query) {
+			for _, app := range apps {
+				if app.Name != "Firefox" {
 					continue
 				}
 				results = append(results, raplugin.SearchResult{
@@ -33,8 +37,6 @@ func init() {
 					Action: raplugin.Action{
 						Type:         "app.launch",
 						AppID:        app.ID,
-						Command:      app.Command,
-						PluginID:     "ra-app-launcher",
 						CapabilityID: "apps",
 					},
 				})

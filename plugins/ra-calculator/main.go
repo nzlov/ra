@@ -2,12 +2,15 @@ package main
 
 import (
 	"embed"
+	"regexp"
 
 	"github.com/nzlov/ra/pkg/raplugin"
 )
 
 //go:embed assets/**
 var assets embed.FS
+
+var calculatorTrigger = regexp.MustCompile(`^\s*=`)
 
 func init() {
 	raplugin.Register(raplugin.Plugin{
@@ -30,7 +33,7 @@ func init() {
 }
 
 func searchCalculator(request raplugin.SearchRequest) []raplugin.SearchResult {
-	if len(request.Query) == 0 || request.Query[0] != '=' {
+	if !calculatorTrigger.MatchString(request.Query) {
 		return nil
 	}
 	return []raplugin.SearchResult{{
@@ -40,9 +43,7 @@ func searchCalculator(request raplugin.SearchRequest) []raplugin.SearchResult {
 		Kind:     "capability",
 		Action: raplugin.Action{
 			Type:         "capability.open",
-			PluginID:     "ra-calculator",
 			CapabilityID: "calculate",
-			UI:           "/calculator/index.html",
 			Query:        request.Query,
 		},
 	}}

@@ -13,7 +13,7 @@ RA is a Linux-first launcher prototype built with Go and Wails v3. It aims for a
 - Models plugins as Go/WASI `.wasm` files built from plugin-owned Go source, manifest, capabilities, permissions, search behavior, and embedded UI assets.
 - Supports capability-level enable and disable.
 - Serves enabled capability UI assets under `/plugins/<plugin-id>/<capability-id>/...` in a sandboxed iframe.
-- Exposes host actions to plugin UIs through a permission-checked `window.ra.invoke()` bridge.
+- Exposes permission-checked RA APIs to plugins, including WASM host APIs such as `apps.list` and UI actions through `window.ra.invoke()`.
 
 ## Requirements
 
@@ -60,5 +60,5 @@ Plugin and capability enable/disable state is stored in `~/.config/ra/plugins.js
 
 ## Next Steps
 
-- Add explicit host APIs for clipboard, storage, app launch, and result rendering.
+- Add more explicit host APIs for storage and result rendering.
 - Add Niri-friendly show/hide integration and document a compositor keybinding.

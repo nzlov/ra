@@ -20,13 +20,15 @@ func NewActionExecutor() ActionExecutor {
 func (e ActionExecutor) Invoke(action Action) (InvokeResult, error) {
 	switch action.Type {
 	case "app.launch":
-		if action.Command == "" {
+		return InvokeResult{}, errors.New("app.launch requires a controlled launch command")
+	case "app.launch.command":
+		if action.Text == "" {
 			return InvokeResult{}, errors.New("missing launch command")
 		}
-		if err := e.run("sh", []string{"-lc", action.Command}, ""); err != nil {
+		if err := e.run("sh", []string{"-lc", action.Text}, ""); err != nil {
 			return InvokeResult{}, err
 		}
-		return InvokeResult{Type: action.Type, Message: "launched"}, nil
+		return InvokeResult{Type: "app.launch", Message: "launched"}, nil
 	case "clipboard.write":
 		if len(e.ClipboardCommand) == 0 {
 			return InvokeResult{}, errors.New("no clipboard command configured")

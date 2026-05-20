@@ -36,11 +36,12 @@ func TestSearchCallsRealGoWASMPluginWithRAAPIData(t *testing.T) {
 	results, err := Search(wasm, raplugin.SearchRequest{
 		Query: "fire",
 		Limit: 5,
+	}, HostAPI{
+		Permissions: []string{"apps:read", "apps:launch"},
 		Apps: []raplugin.App{{
 			ID:      "firefox",
 			Name:    "Firefox",
 			Comment: "Browser",
-			Command: "firefox",
 		}},
 	})
 	if err != nil {
@@ -53,8 +54,22 @@ func TestSearchCallsRealGoWASMPluginWithRAAPIData(t *testing.T) {
 	if result.Title != "Firefox" || result.Action.Type != "app.launch" {
 		t.Fatalf("result = %#v", result)
 	}
-	if result.Action.AppID != "firefox" || result.Action.Command != "firefox" {
+	if result.Action.AppID != "firefox" {
 		t.Fatalf("action = %#v", result.Action)
+	}
+}
+
+func TestHostAPIRejectsAppListWithoutPermission(t *testing.T) {
+	wasm := buildTestPlugin(t, "appapidenied")
+
+	results, err := Search(wasm, raplugin.SearchRequest{Query: "apps"}, HostAPI{
+		Apps: []raplugin.App{{ID: "firefox", Name: "Firefox"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Title != "denied" {
+		t.Fatalf("results = %#v", results)
 	}
 }
 
