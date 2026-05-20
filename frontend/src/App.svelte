@@ -1,6 +1,7 @@
 <script lang="ts">
   import {onMount} from 'svelte';
   import {LauncherService} from '../bindings/github.com/nzlov/ra/internal/app';
+  import {createSearchScheduler} from './searchScheduler.js';
 
   type Action = {
     type: string;
@@ -66,15 +67,26 @@
   let searchInput: HTMLInputElement;
   let capabilityFrame: HTMLIFrameElement | null = null;
 
-  async function search() {
-    try {
-      results = await LauncherService.Search(query);
+  const searchScheduler = createSearchScheduler<Result[]>({
+    delay: 100,
+    search: (searchQuery) => LauncherService.Search(searchQuery),
+    onResults: (searchResults) => {
+      results = searchResults;
       status = `${results.length} result${results.length === 1 ? '' : 's'}`;
       activeIndex = 0;
-    } catch (error) {
+    },
+    onError: () => {
       useFallbackResults();
       status = 'Local preview';
     }
+  });
+
+  function search() {
+    searchScheduler.schedule(query);
+  }
+
+  async function searchNow() {
+    await searchScheduler.searchNow(query);
   }
 
   async function invoke(result: Result) {
@@ -169,7 +181,7 @@
       });
       if (result.type.startsWith('plugins.')) {
         await refreshStatus();
-        await search();
+        await searchNow();
       }
       responseTarget?.postMessage({ra: 'response', id: message.id, result}, '*');
     } catch (error) {
