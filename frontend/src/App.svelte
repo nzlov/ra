@@ -1,6 +1,8 @@
 <script lang="ts">
   import {onMount} from 'svelte';
+  import {Events, Window} from '@wailsio/runtime';
   import {LauncherService} from '../bindings/github.com/nzlov/ra/internal/app';
+  import {shouldCloseForEscape, shouldReturnToLauncherForEscape} from './launcherWindowBehavior.js';
   import {createSearchScheduler} from './searchScheduler.js';
 
   type Action = {
@@ -124,6 +126,10 @@
     setTimeout(() => searchInput?.focus(), 0);
   }
 
+  function closeWindow() {
+    Window.Close();
+  }
+
   function errorMessage(error: unknown) {
     if (error instanceof Error) {
       return error.message;
@@ -158,8 +164,13 @@
   }
 
   function windowKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape' && view !== 'launcher') {
+    if (shouldReturnToLauncherForEscape(event.key, view)) {
       backToLauncher();
+      event.preventDefault();
+      return;
+    }
+    if (shouldCloseForEscape(event.key, query, view)) {
+      closeWindow();
       event.preventDefault();
     }
   }
@@ -191,7 +202,9 @@
 
   onMount(() => {
     searchInput?.focus();
+    const removeLostFocusHandler = Events.On(Events.Types.Common.WindowLostFocus, closeWindow);
     refreshStatus();
+    return removeLostFocusHandler;
   });
 
   async function refreshStatus() {
