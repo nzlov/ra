@@ -7,14 +7,17 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/nzlov/ra/internal/pluginruntime"
 	"github.com/nzlov/ra/pkg/raplugin"
 )
 
 var idPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-_.]*$`)
+var runPluginSearch = pluginruntime.Search
 
 type Registry struct {
 	Root    string
@@ -188,32 +191,75 @@ func (r Registry) Search(query string, limit int) []Result {
 
 func (r Registry) SearchWithContext(request SearchRequest) []Result {
 	trimmed := strings.TrimSpace(request.Query)
-	var results []Result
-	for _, plugin := range r.Plugins {
+	type searchResultSet struct {
+		index   int
+		plugin  Plugin
+		results []raplugin.SearchResult
+	}
+	items := make([]searchResultSet, 0, len(r.Plugins))
+	sem := make(chan struct{}, searchConcurrencyLimit(len(r.Plugins)))
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	for i, plugin := range r.Plugins {
 		if plugin.Disabled {
 			continue
 		}
-		pluginResults, err := pluginruntime.Search(plugin.Raw, raplugin.SearchRequest{
-			Query: trimmed,
-			Limit: request.Limit,
-		}, pluginruntime.HostAPI{
-			Permissions: append([]string(nil), plugin.Permissions...),
-			Apps:        append([]raplugin.App(nil), request.HostAPI.Apps...),
-		})
-		if err != nil {
-			continue
-		}
-		for _, result := range pluginResults {
-			if !pluginCapabilityEnabled(plugin, result.Action.CapabilityID) {
+		wg.Add(1)
+		go func(index int, plugin Plugin) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			rawResults, err := runPluginSearch(plugin.Raw, raplugin.SearchRequest{
+				Query: trimmed,
+				Limit: request.Limit,
+			}, pluginruntime.HostAPI{
+				Permissions: append([]string(nil), plugin.Permissions...),
+				Apps:        append([]raplugin.App(nil), request.HostAPI.Apps...),
+			})
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			items = append(items, searchResultSet{
+				index:   index,
+				plugin:  plugin,
+				results: rawResults,
+			})
+			mu.Unlock()
+		}(i, plugin)
+	}
+	wg.Wait()
+	sort.SliceStable(items, func(i, j int) bool {
+		return items[i].index < items[j].index
+	})
+
+	var results []Result
+	for _, item := range items {
+		for _, result := range item.results {
+			if !pluginCapabilityEnabled(item.plugin, result.Action.CapabilityID) {
 				continue
 			}
-			results = append(results, resultFromPlugin(plugin, result, trimmed))
+			results = append(results, resultFromPlugin(item.plugin, result, trimmed))
 		}
 	}
 	if request.Limit > 0 && len(results) > request.Limit {
 		return results[:request.Limit]
 	}
 	return results
+}
+
+func searchConcurrencyLimit(pluginCount int) int {
+	if pluginCount < 1 {
+		return 1
+	}
+	limit := runtime.GOMAXPROCS(0)
+	if limit < 1 {
+		return 1
+	}
+	if pluginCount < limit {
+		return pluginCount
+	}
+	return limit
 }
 
 func pluginCapabilityEnabled(plugin Plugin, capabilityID string) bool {

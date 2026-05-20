@@ -7,8 +7,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/nzlov/ra/internal/pluginruntime"
 	"github.com/nzlov/ra/pkg/raplugin"
 )
 
@@ -113,6 +117,85 @@ func TestSearchCallsPluginSearch(t *testing.T) {
 	}
 }
 
+func TestSearchWithContextRunsPluginSearchConcurrentlyWithRuntimeLimit(t *testing.T) {
+	previousGOMAXPROCS := runtime.GOMAXPROCS(2)
+	t.Cleanup(func() {
+		runtime.GOMAXPROCS(previousGOMAXPROCS)
+	})
+	previousSearch := runPluginSearch
+	t.Cleanup(func() {
+		runPluginSearch = previousSearch
+	})
+
+	var active int32
+	var maxActive int32
+	started := make(chan string, 4)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(release) })
+	})
+
+	runPluginSearch = func(raw []byte, request raplugin.SearchRequest, api ...pluginruntime.HostAPI) ([]raplugin.SearchResult, error) {
+		id := string(raw)
+		current := atomic.AddInt32(&active, 1)
+		for {
+			seen := atomic.LoadInt32(&maxActive)
+			if current <= seen || atomic.CompareAndSwapInt32(&maxActive, seen, current) {
+				break
+			}
+		}
+		started <- id
+		<-release
+		atomic.AddInt32(&active, -1)
+		return []raplugin.SearchResult{{
+			ID:    "result:" + id,
+			Title: id,
+			Action: raplugin.Action{
+				CapabilityID: "main",
+			},
+		}}, nil
+	}
+
+	registry := Registry{Plugins: []Plugin{
+		searchTestPlugin("plugin-0"),
+		searchTestPlugin("plugin-1"),
+		searchTestPlugin("plugin-2"),
+		searchTestPlugin("plugin-3"),
+	}}
+	done := make(chan []Result, 1)
+	go func() {
+		done <- registry.SearchWithContext(SearchRequest{Query: "query", Limit: 10})
+	}()
+
+	waitStarted(t, started, 2)
+	select {
+	case id := <-started:
+		t.Fatalf("started %s before respecting runtime concurrency limit", id)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	releaseOnce.Do(func() { close(release) })
+	var results []Result
+	select {
+	case results = <-done:
+	case <-time.After(time.Second):
+		t.Fatal("search did not finish")
+	}
+	if maxActive != 2 {
+		t.Fatalf("max concurrent searches = %d, want 2", maxActive)
+	}
+	wantTitles := []string{"plugin-0", "plugin-1", "plugin-2", "plugin-3"}
+	if len(results) != len(wantTitles) {
+		t.Fatalf("len(results) = %d, want %d: %#v", len(results), len(wantTitles), results)
+	}
+	for i, want := range wantTitles {
+		if results[i].Title != want {
+			t.Fatalf("result %d title = %q, want %q; results = %#v", i, results[i].Title, want, results)
+		}
+	}
+}
+
 func TestSearchStampsPluginOwnedActionMetadata(t *testing.T) {
 	plugin := Plugin{
 		ID: "trusted-plugin",
@@ -134,6 +217,28 @@ func TestSearchStampsPluginOwnedActionMetadata(t *testing.T) {
 	}
 	if result.Action.UI != "/trusted/index.html" {
 		t.Fatalf("UI = %q", result.Action.UI)
+	}
+}
+
+func searchTestPlugin(id string) Plugin {
+	return Plugin{
+		ID:  id,
+		Raw: []byte(id),
+		Capabilities: []Capability{{
+			ID: "main",
+			UI: "/main.html",
+		}},
+	}
+}
+
+func waitStarted(t *testing.T, started <-chan string, count int) {
+	t.Helper()
+	for i := 0; i < count; i++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatalf("started %d searches, want %d", i, count)
+		}
 	}
 }
 
