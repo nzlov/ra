@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>JSON Editor</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #111816;
+        --panel: #17211e;
+        --panel-strong: #1f2f2a;
+        --text: #f3f0e6;
+        --muted: #9fb3aa;
+        --accent: #72e3ac;
+        --accent-strong: #b9f7cf;
+        --danger: #ff887a;
+        --border: #31443d;
+        --shadow: rgba(0, 0, 0, 0.34);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        background:
+          radial-gradient(circle at 20% 12%, rgba(114, 227, 172, 0.22), transparent 28rem),
+          radial-gradient(circle at 86% 0%, rgba(242, 211, 124, 0.14), transparent 24rem),
+          linear-gradient(135deg, #0e1513 0%, var(--bg) 54%, #18251f 100%);
+        font-family: "IBM Plex Mono", "Cascadia Code", "Fira Code", monospace;
+      }
+
+      main {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        gap: 1rem;
+        min-height: 100vh;
+        padding: 1.1rem;
+      }
+
+      header {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 1rem;
+      }
+
+      h1 {
+        margin: 0;
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: clamp(1.8rem, 6vw, 3rem);
+        font-weight: 700;
+        letter-spacing: -0.06em;
+      }
+
+      .subtitle {
+        margin: 0.2rem 0 0;
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0.5rem;
+      }
+
+      button {
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 0.55rem 0.85rem;
+        color: var(--text);
+        background: rgba(31, 47, 42, 0.88);
+        font: inherit;
+        cursor: pointer;
+        box-shadow: 0 0.45rem 1.2rem var(--shadow);
+      }
+
+      button:hover,
+      button:focus-visible {
+        border-color: var(--accent);
+        color: var(--accent-strong);
+        outline: none;
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(16rem, 0.42fr);
+        gap: 1rem;
+        min-height: 0;
+      }
+
+      textarea,
+      .tree {
+        width: 100%;
+        min-height: 22rem;
+        border: 1px solid var(--border);
+        border-radius: 1.2rem;
+        color: var(--text);
+        background: rgba(23, 33, 30, 0.9);
+        box-shadow: 0 1rem 2.5rem var(--shadow);
+      }
+
+      textarea {
+        resize: none;
+        padding: 1rem;
+        font: 0.96rem/1.55 "IBM Plex Mono", "Cascadia Code", "Fira Code", monospace;
+        tab-size: 2;
+        outline: none;
+      }
+
+      textarea:focus {
+        border-color: var(--accent);
+      }
+
+      .tree {
+        overflow: auto;
+        padding: 1rem;
+        white-space: pre-wrap;
+      }
+
+      .tree h2 {
+        margin: 0 0 0.85rem;
+        color: var(--accent-strong);
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+      }
+
+      .tree ul {
+        margin: 0.25rem 0 0.25rem 1rem;
+        padding: 0;
+        list-style: none;
+        border-left: 1px solid rgba(114, 227, 172, 0.2);
+      }
+
+      .tree li {
+        margin: 0.15rem 0;
+        padding-left: 0.7rem;
+      }
+
+      .key {
+        color: var(--accent);
+      }
+
+      .primitive {
+        color: #f2d37c;
+      }
+
+      footer {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        border: 1px solid var(--border);
+        border-radius: 1rem;
+        padding: 0.8rem 1rem;
+        background: rgba(23, 33, 30, 0.78);
+      }
+
+      #status {
+        color: var(--accent-strong);
+      }
+
+      #status.error {
+        color: var(--danger);
+      }
+
+      #stats {
+        color: var(--muted);
+      }
+
+      @media (max-width: 760px) {
+        main {
+          padding: 0.75rem;
+        }
+
+        header,
+        footer {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .actions {
+          justify-content: flex-start;
+        }
+
+        .workspace {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>JSON Editor</h1>
+          <p class="subtitle">Text-first JSON formatting, minifying, and validation.</p>
+        </div>
+        <nav class="actions" aria-label="JSON actions">
+          <button id="format" type="button">Format</button>
+          <button id="minify" type="button">Minify</button>
+          <button id="validate" type="button">Validate</button>
+          <button id="clear" type="button">Clear</button>
+        </nav>
+      </header>
+
+      <section class="workspace">
+        <textarea id="editor" spellcheck="false" aria-label="JSON text"></textarea>
+        <aside class="tree" aria-live="polite">
+          <h2>Structure</h2>
+          <div id="tree-output">Enter valid JSON to see a read-only outline.</div>
+        </aside>
+      </section>
+
+      <footer>
+        <output id="status">Ready</output>
+        <span id="stats">0 bytes</span>
+      </footer>
+    </main>
+
+    <script>
+      const editor = document.querySelector("#editor");
+      const status = document.querySelector("#status");
+      const stats = document.querySelector("#stats");
+      const treeOutput = document.querySelector("#tree-output");
+
+      const params = new URLSearchParams(window.location.search);
+      const hasIncomingQuery = params.has("q");
+      const incomingQuery = params.get("q") || "";
+      const draftKey = "ra-json-editor:draft";
+
+      editor.value = initialText(incomingQuery, hasIncomingQuery);
+      update();
+
+      document.querySelector("#format").addEventListener("click", () => transformJSON(2));
+      document.querySelector("#minify").addEventListener("click", () => transformJSON(0));
+      document.querySelector("#validate").addEventListener("click", () => update(true));
+      document.querySelector("#clear").addEventListener("click", () => {
+        editor.value = "";
+        saveDraft();
+        update();
+        editor.focus();
+      });
+      editor.addEventListener("input", () => {
+        saveDraft();
+        update();
+      });
+      editor.addEventListener("keydown", (event) => {
+        if (event.key === "Tab") {
+          event.preventDefault();
+          document.execCommand("insertText", false, "  ");
+        }
+      });
+
+      function initialText(query, hasQuery) {
+        if (isJSONText(query)) return query;
+        if (hasQuery) return "";
+        return localStorage.getItem(draftKey) || "";
+      }
+
+      function saveDraft() {
+        localStorage.setItem(draftKey, editor.value);
+      }
+
+      function transformJSON(indent) {
+        const parsed = parseEditor();
+        if (!parsed.ok) return showError(parsed.error);
+        editor.value = JSON.stringify(parsed.value, null, indent);
+        saveDraft();
+        update();
+      }
+
+      function update(forceMessage = false) {
+        const text = editor.value.trim();
+        stats.textContent = `${new Blob([editor.value]).size} bytes`;
+        if (!text) {
+          status.className = "";
+          status.textContent = "Ready";
+          treeOutput.textContent = "Enter valid JSON to see a read-only outline.";
+          return;
+        }
+        const parsed = parseEditor();
+        if (!parsed.ok) {
+          showError(parsed.error);
+          treeOutput.textContent = "Invalid JSON";
+          return;
+        }
+        status.className = "";
+        status.textContent = forceMessage ? "Valid JSON" : "Valid";
+        renderTree(parsed.value);
+      }
+
+      function parseEditor() {
+        try {
+          return {ok: true, value: JSON.parse(editor.value)};
+        } catch (error) {
+          return {ok: false, error};
+        }
+      }
+
+      function showError(error) {
+        status.className = "error";
+        status.textContent = error.message;
+      }
+
+      function isJSONText(text) {
+        if (!text.trim()) return false;
+        try {
+          JSON.parse(text);
+          return true;
+        } catch {
+          return false;
+        }
+      }
+
+      function renderTree(value) {
+        treeOutput.replaceChildren(renderNode(value, "root"));
+      }
+
+      function renderNode(value, label) {
+        const item = document.createElement("li");
+        const key = document.createElement("span");
+        key.className = "key";
+        key.textContent = label;
+        item.append(key);
+
+        if (Array.isArray(value)) {
+          item.append(` [${value.length}]`);
+          const list = document.createElement("ul");
+          value.forEach((child, index) => list.append(renderNode(child, String(index))));
+          item.append(list);
+          return wrapRoot(item, label);
+        }
+
+        if (value && typeof value === "object") {
+          const keys = Object.keys(value);
+          item.append(` {${keys.length}}`);
+          const list = document.createElement("ul");
+          keys.forEach((childKey) => list.append(renderNode(value[childKey], childKey)));
+          item.append(list);
+          return wrapRoot(item, label);
+        }
+
+        const primitive = document.createElement("span");
+        primitive.className = "primitive";
+        primitive.textContent = `: ${JSON.stringify(value)}`;
+        item.append(primitive);
+        return wrapRoot(item, label);
+      }
+
+      function wrapRoot(item, label) {
+        if (label !== "root") return item;
+        const list = document.createElement("ul");
+        list.append(item);
+        return list;
+      }
+    </script>
+  </body>
+</html>
