@@ -34,6 +34,10 @@ type Runtime struct {
 type HostAPI struct {
 	Permissions []string
 	Apps        []raplugin.App
+	StoreGet    func(key string) (json.RawMessage, bool, error)
+	StoreSet    func(key string, value json.RawMessage) error
+	StoreDelete func(key string) error
+	StoreList   func(prefix string) (json.RawMessage, error)
 }
 
 func Load(raw []byte) (Plugin, error) {
@@ -248,9 +252,12 @@ type hostRequest struct {
 }
 
 type hostResponse struct {
-	OK    bool           `json:"ok"`
-	Error string         `json:"error,omitempty"`
-	Apps  []raplugin.App `json:"apps,omitempty"`
+	OK    bool            `json:"ok"`
+	Error string          `json:"error,omitempty"`
+	Apps  []raplugin.App  `json:"apps,omitempty"`
+	Found bool            `json:"found,omitempty"`
+	Value json.RawMessage `json:"value,omitempty"`
+	Items json.RawMessage `json:"items,omitempty"`
 }
 
 func (rt *Runtime) handleHostRequest(raw []byte) hostResponse {
@@ -264,9 +271,90 @@ func (rt *Runtime) handleHostRequest(raw []byte) hostResponse {
 			return hostResponse{OK: false, Error: `missing permission "apps:read"`}
 		}
 		return hostResponse{OK: true, Apps: append([]raplugin.App(nil), rt.api.Apps...)}
+	case "store.get":
+		return rt.handleStoreGet(request.Params)
+	case "store.set":
+		return rt.handleStoreSet(request.Params)
+	case "store.delete":
+		return rt.handleStoreDelete(request.Params)
+	case "store.list":
+		return rt.handleStoreList(request.Params)
 	default:
 		return hostResponse{OK: false, Error: "unsupported host method " + request.Method}
 	}
+}
+
+func (rt *Runtime) handleStoreGet(raw json.RawMessage) hostResponse {
+	if rt.api.StoreGet == nil {
+		return hostResponse{OK: false, Error: "store.get unavailable"}
+	}
+	var params struct {
+		Key string `json:"key"`
+	}
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return hostResponse{OK: false, Error: "read store.get params: " + err.Error()}
+	}
+	value, found, err := rt.api.StoreGet(params.Key)
+	if err != nil {
+		return hostResponse{OK: false, Error: err.Error()}
+	}
+	if !found {
+		return hostResponse{OK: true}
+	}
+	return hostResponse{OK: true, Found: true, Value: append(json.RawMessage(nil), value...)}
+}
+
+func (rt *Runtime) handleStoreSet(raw json.RawMessage) hostResponse {
+	if rt.api.StoreSet == nil {
+		return hostResponse{OK: false, Error: "store.set unavailable"}
+	}
+	var params struct {
+		Key   string          `json:"key"`
+		Value json.RawMessage `json:"value"`
+	}
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return hostResponse{OK: false, Error: "read store.set params: " + err.Error()}
+	}
+	if err := rt.api.StoreSet(params.Key, params.Value); err != nil {
+		return hostResponse{OK: false, Error: err.Error()}
+	}
+	return hostResponse{OK: true}
+}
+
+func (rt *Runtime) handleStoreDelete(raw json.RawMessage) hostResponse {
+	if rt.api.StoreDelete == nil {
+		return hostResponse{OK: false, Error: "store.delete unavailable"}
+	}
+	var params struct {
+		Key string `json:"key"`
+	}
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return hostResponse{OK: false, Error: "read store.delete params: " + err.Error()}
+	}
+	if err := rt.api.StoreDelete(params.Key); err != nil {
+		return hostResponse{OK: false, Error: err.Error()}
+	}
+	return hostResponse{OK: true}
+}
+
+func (rt *Runtime) handleStoreList(raw json.RawMessage) hostResponse {
+	if rt.api.StoreList == nil {
+		return hostResponse{OK: false, Error: "store.list unavailable"}
+	}
+	var params struct {
+		Prefix string `json:"prefix"`
+	}
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return hostResponse{OK: false, Error: "read store.list params: " + err.Error()}
+	}
+	items, err := rt.api.StoreList(params.Prefix)
+	if err != nil {
+		return hostResponse{OK: false, Error: err.Error()}
+	}
+	if items == nil {
+		items = json.RawMessage("[]")
+	}
+	return hostResponse{OK: true, Items: append(json.RawMessage(nil), items...)}
 }
 
 func (rt *Runtime) writeHostResponse(ctx context.Context, mod api.Module, response hostResponse) uint64 {
