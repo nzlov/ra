@@ -272,7 +272,7 @@
         if (!window.ra) {
           return '';
         }
-        const result = await window.ra.invoke({type: 'store.get', key: paperKey});
+        const result = await window.ra.invoke({type: 'store.get', text: JSON.stringify({key: paperKey})});
         return typeof result?.value === 'string' ? result.value : '';
       }
 
@@ -280,7 +280,7 @@
         if (!window.ra) {
           return;
         }
-        await window.ra.invoke({type: 'store.set', key: paperKey, value: paper.value});
+        await window.ra.invoke({type: 'store.set', text: JSON.stringify({key: paperKey, value: paper.value})});
       }
 
       function appendExpression(text, expression) {

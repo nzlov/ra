@@ -73,7 +73,7 @@ assert.deepEqual(
 paper.value = `${paper.value}\n4+5`;
 await paper.dispatch('input');
 assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
-  {type: 'store.get', key: 'papers/current'},
-  {type: 'store.set', key: 'papers/current', value: '1+1\n=2*3\n2+1'},
-  {type: 'store.set', key: 'papers/current', value: '1+1\n=2*3\n2+1\n4+5'},
+  {type: 'store.get', text: '{"key":"papers/current"}'},
+  {type: 'store.set', text: '{"key":"papers/current","value":"1+1\\n=2*3\\n2+1"}'},
+  {type: 'store.set', text: '{"key":"papers/current","value":"1+1\\n=2*3\\n2+1\\n4+5"}'},
 ]);
