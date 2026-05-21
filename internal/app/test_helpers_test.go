@@ -54,6 +54,11 @@ func writeFakeAppLauncherPlugin(t *testing.T, root string) string {
 	return writeTestPlugin(t, root, "ra-app-launcher", "./internal/app/testdata/fakeapplauncher")
 }
 
+func writeStorePersistPlugin(t *testing.T, root string) string {
+	t.Helper()
+	return writeTestPlugin(t, root, "store-persist", "./internal/app/testdata/storepersistplugin")
+}
+
 func writeTestPlugin(t *testing.T, root string, id string, pkg string) string {
 	t.Helper()
 	if err := os.MkdirAll(root, 0o755); err != nil {

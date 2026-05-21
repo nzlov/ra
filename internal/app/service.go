@@ -24,6 +24,7 @@ type Config struct {
 	PluginRoots      []string
 	UserPluginRoot   string
 	PluginConfigPath string
+	PluginStorePath  string
 	DesktopDirs      []string
 	Limit            int
 	BuiltinPlugins   []plugins.BuiltinPlugin
@@ -35,6 +36,7 @@ type LauncherService struct {
 	pluginApps     []raplugin.App
 	pluginRegistry plugins.Registry
 	pluginConfig   PluginConfig
+	pluginStore    *PluginStore
 	actions        ActionExecutor
 }
 
@@ -92,6 +94,10 @@ func NewLauncherService(config Config) *LauncherService {
 		home, _ := os.UserHomeDir()
 		config.PluginConfigPath = defaultPluginConfigPath(home)
 	}
+	if config.PluginStorePath == "" {
+		home, _ := os.UserHomeDir()
+		config.PluginStorePath = defaultPluginStorePath(home)
+	}
 	if config.PluginRoot == "" && len(config.PluginRoots) > 0 {
 		config.PluginRoot = config.PluginRoots[0]
 	}
@@ -124,6 +130,13 @@ func (s *LauncherService) Refresh() error {
 }
 
 func (s *LauncherService) RefreshPlugins() error {
+	if s.pluginStore == nil {
+		store, err := OpenPluginStore(s.config.PluginStorePath)
+		if err != nil {
+			return err
+		}
+		s.pluginStore = store
+	}
 	config, err := readPluginConfig(s.config.PluginConfigPath)
 	if err != nil {
 		return err
@@ -184,10 +197,56 @@ func (s *LauncherService) SearchWithContext(ctx context.Context, query string) [
 func (s *LauncherService) searchPlugins(ctx context.Context, query string, limit int) []plugins.Result {
 	registry := s.pluginRegistry
 	return registry.SearchWithContext(ctx, plugins.SearchRequest{
-		Query:   query,
-		Limit:   limit,
-		HostAPI: plugins.HostAPI{Apps: s.pluginApps},
+		Query: query,
+		Limit: limit,
+		HostAPI: plugins.HostAPI{
+			Apps:        s.pluginApps,
+			StoreGet:    s.pluginStoreGet,
+			StoreSet:    s.pluginStoreSet,
+			StoreDelete: s.pluginStoreDelete,
+			StoreList:   s.pluginStoreList,
+		},
 	})
+}
+
+func (s *LauncherService) pluginStoreGet(pluginID string, key string) (json.RawMessage, bool, error) {
+	if s.pluginStore == nil {
+		return nil, false, nil
+	}
+	var value json.RawMessage
+	found, err := s.pluginStore.Get(pluginID, key, &value)
+	if err != nil || !found {
+		return nil, found, err
+	}
+	return value, true, nil
+}
+
+func (s *LauncherService) pluginStoreSet(pluginID string, key string, value json.RawMessage) error {
+	if s.pluginStore == nil {
+		return nil
+	}
+	return s.pluginStore.Set(pluginID, key, value)
+}
+
+func (s *LauncherService) pluginStoreDelete(pluginID string, key string) error {
+	if s.pluginStore == nil {
+		return nil
+	}
+	return s.pluginStore.Delete(pluginID, key)
+}
+
+func (s *LauncherService) pluginStoreList(pluginID string, prefix string) (json.RawMessage, error) {
+	if s.pluginStore == nil {
+		return json.RawMessage(`[]`), nil
+	}
+	var values json.RawMessage
+	if err := s.pluginStore.List(pluginID, prefix, &values); err != nil {
+		return nil, err
+	}
+	if values == nil {
+		return json.RawMessage(`[]`), nil
+	}
+	return values, nil
 }
 
 func (s *LauncherService) Invoke(action Action) (InvokeResult, error) {
@@ -295,6 +354,13 @@ func defaultPluginConfigPath(home string) string {
 		return filepath.Join(".config", "ra", "plugins.json")
 	}
 	return filepath.Join(home, ".config", "ra", "plugins.json")
+}
+
+func defaultPluginStorePath(home string) string {
+	if home == "" {
+		return filepath.Join(".config", "ra", "plugin-store.db")
+	}
+	return filepath.Join(home, ".config", "ra", "plugin-store.db")
 }
 
 func pluginRootSources(roots []string, userPluginRoot string) []plugins.Root {

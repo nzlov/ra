@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/nzlov/ra/internal/desktop"
+	"github.com/nzlov/ra/internal/plugins"
 	"github.com/nzlov/ra/pkg/raplugin"
 )
 
@@ -117,6 +118,51 @@ func TestSearchWithContextReturnsNoResultsWhenCanceled(t *testing.T) {
 	results := service.SearchWithContext(ctx, "calculator")
 	if len(results) != 0 {
 		t.Fatalf("results = %#v", results)
+	}
+}
+
+func TestSearchPluginsPersistsStoreAcrossSearches(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", root)
+	user := filepath.Join(root, "user")
+	writeStorePersistPlugin(t, user)
+
+	service := NewLauncherService(Config{
+		PluginRoots:      []string{user},
+		UserPluginRoot:   user,
+		PluginConfigPath: filepath.Join(root, "config", "plugins.json"),
+		BuiltinPlugins:   []plugins.BuiltinPlugin{},
+	})
+	if err := service.RefreshPlugins(); err != nil {
+		t.Fatal(err)
+	}
+
+	results := service.Search("store persist")
+	if len(results) != 1 || results[0].Title != "count" || results[0].Subtitle != "1" {
+		t.Fatalf("first results = %#v", results)
+	}
+	if err := service.pluginStore.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	service = NewLauncherService(Config{
+		PluginRoots:      []string{user},
+		UserPluginRoot:   user,
+		PluginConfigPath: filepath.Join(root, "config", "plugins.json"),
+		BuiltinPlugins:   []plugins.BuiltinPlugin{},
+	})
+	if err := service.RefreshPlugins(); err != nil {
+		t.Fatal(err)
+	}
+
+	results = service.Search("store persist")
+	if len(results) != 1 || results[0].Title != "count" || results[0].Subtitle != "2" {
+		t.Fatalf("second results = %#v", results)
+	}
+
+	storePath := filepath.Join(root, ".config", "ra", "plugin-store.db")
+	if _, err := os.Stat(storePath); err != nil {
+		t.Fatalf("store path %q: %v", storePath, err)
 	}
 }
 
