@@ -18,7 +18,7 @@ func init() {
 			ID:          "ra-calculator",
 			Name:        "RA Calculator",
 			Version:     "0.1.0",
-			Permissions: []string{"clipboard:write", "store:read", "store:write"},
+			Permissions: []string{"clipboard:write"},
 		},
 		Capabilities: []raplugin.Capability{{
 			ID:       "calculate",

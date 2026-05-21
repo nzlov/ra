@@ -120,7 +120,7 @@
     <main>
       <header>
         <h1>Calculation Paper</h1>
-        <p>One expression per line. The current paper is saved automatically.</p>
+        <p>One expression per line. Open with = to append a starter expression.</p>
       </header>
       <section class="sheet">
         <textarea id="paper" autocomplete="off" spellcheck="false"></textarea>
@@ -132,12 +132,10 @@
       </div>
     </main>
     <script>
-      const STORE_KEY = 'papers/current';
       const paper = document.querySelector('#paper');
       const results = document.querySelector('#results');
       const copy = document.querySelector('#copy');
       const status = document.querySelector('#status');
-      let saveTimer = 0;
 
       function calculate(value) {
         const expression = value.trim().replace(/^=/, '');
@@ -256,33 +254,11 @@
         return lines;
       }
 
-      function storePayload(value) {
-        return JSON.stringify(value);
-      }
-
-      async function invoke(type, value) {
-        if (!window.ra) {
-          return undefined;
-        }
-        const result = await window.ra.invoke({type, text: storePayload(value)});
-        return result && result.data;
-      }
-
-      async function loadPaper() {
+      function loadPaper() {
         const queryExpression = new URLSearchParams(location.search).get('q') || '';
-        try {
-          const stored = await invoke('store.get', {key: STORE_KEY});
-          const storedText = stored && stored.found && stored.value && typeof stored.value.text === 'string'
-            ? stored.value.text
-            : '';
-          paper.value = appendExpression(storedText, queryExpression);
-          status.textContent = stored && stored.found ? 'Restored' : 'Ready';
-        } catch (error) {
-          paper.value = appendExpression('', queryExpression);
-          status.textContent = `Store unavailable: ${error.message || error}`;
-        }
+        paper.value = appendExpression(paper.value, queryExpression);
+        status.textContent = 'Ready';
         render();
-        scheduleSave();
         paper.focus();
       }
 
@@ -297,23 +273,8 @@
         return `${text.replace(/\s+$/, '')}\n${cleaned}`;
       }
 
-      function scheduleSave() {
-        clearTimeout(saveTimer);
-        saveTimer = setTimeout(savePaper, 150);
-      }
-
-      async function savePaper() {
-        try {
-          await invoke('store.set', {key: STORE_KEY, value: {text: paper.value}});
-          status.textContent = 'Saved';
-        } catch (error) {
-          status.textContent = `Save failed: ${error.message || error}`;
-        }
-      }
-
       function update() {
         render();
-        scheduleSave();
       }
 
       paper.addEventListener('input', update);
