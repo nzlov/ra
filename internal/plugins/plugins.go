@@ -2,6 +2,7 @@ package plugins
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -98,7 +99,11 @@ type SearchRequest struct {
 }
 
 type HostAPI struct {
-	Apps []raplugin.App
+	Apps        []raplugin.App
+	StoreGet    func(pluginID string, key string) (json.RawMessage, bool, error)
+	StoreSet    func(pluginID string, key string, value json.RawMessage) error
+	StoreDelete func(pluginID string, key string) error
+	StoreList   func(pluginID string, prefix string) (json.RawMessage, error)
 }
 
 func LoadRegistry(root string) (Registry, error) {
@@ -232,13 +237,35 @@ func (r Registry) SearchWithContext(ctx context.Context, request SearchRequest) 
 			if err := ctx.Err(); err != nil {
 				return
 			}
+			api := pluginruntime.HostAPI{
+				Permissions: append([]string(nil), plugin.Permissions...),
+				Apps:        append([]raplugin.App(nil), request.HostAPI.Apps...),
+			}
+			pluginID := plugin.ID
+			if request.HostAPI.StoreGet != nil {
+				api.StoreGet = func(key string) (json.RawMessage, bool, error) {
+					return request.HostAPI.StoreGet(pluginID, key)
+				}
+			}
+			if request.HostAPI.StoreSet != nil {
+				api.StoreSet = func(key string, value json.RawMessage) error {
+					return request.HostAPI.StoreSet(pluginID, key, value)
+				}
+			}
+			if request.HostAPI.StoreDelete != nil {
+				api.StoreDelete = func(key string) error {
+					return request.HostAPI.StoreDelete(pluginID, key)
+				}
+			}
+			if request.HostAPI.StoreList != nil {
+				api.StoreList = func(prefix string) (json.RawMessage, error) {
+					return request.HostAPI.StoreList(pluginID, prefix)
+				}
+			}
 			rawResults, err := runPluginSearch(ctx, plugin, raplugin.SearchRequest{
 				Query: trimmed,
 				Limit: request.Limit,
-			}, pluginruntime.HostAPI{
-				Permissions: append([]string(nil), plugin.Permissions...),
-				Apps:        append([]raplugin.App(nil), request.HostAPI.Apps...),
-			})
+			}, api)
 			if err != nil {
 				return
 			}

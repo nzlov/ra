@@ -3,6 +3,7 @@ package plugins
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -184,6 +185,96 @@ func TestSearchWithContextSkipsPluginWhenMatchingCapabilityDisabled(t *testing.T
 	}
 	if len(results) != 0 {
 		t.Fatalf("results = %#v", results)
+	}
+}
+
+func TestSearchWithContextBindsStoreHostAPIToCurrentPlugin(t *testing.T) {
+	previousSearch := runPluginSearch
+	t.Cleanup(func() {
+		runPluginSearch = previousSearch
+	})
+
+	var calls []string
+	runPluginSearch = func(ctx context.Context, plugin Plugin, request raplugin.SearchRequest, api pluginruntime.HostAPI) ([]raplugin.SearchResult, error) {
+		if api.StoreGet == nil {
+			t.Fatal("StoreGet is nil")
+		}
+		if api.StoreSet == nil {
+			t.Fatal("StoreSet is nil")
+		}
+		if api.StoreDelete == nil {
+			t.Fatal("StoreDelete is nil")
+		}
+		if api.StoreList == nil {
+			t.Fatal("StoreList is nil")
+		}
+		value, found, err := api.StoreGet("prefs/theme")
+		if err != nil {
+			t.Fatalf("StoreGet error = %v", err)
+		}
+		if !found {
+			t.Fatal("StoreGet found = false")
+		}
+		if string(value) != `{"theme":"dark"}` {
+			t.Fatalf("StoreGet value = %s", value)
+		}
+		if err := api.StoreSet("prefs/theme", json.RawMessage(`{"theme":"light"}`)); err != nil {
+			t.Fatalf("StoreSet error = %v", err)
+		}
+		if err := api.StoreDelete("prefs/theme"); err != nil {
+			t.Fatalf("StoreDelete error = %v", err)
+		}
+		list, err := api.StoreList("prefs/")
+		if err != nil {
+			t.Fatalf("StoreList error = %v", err)
+		}
+		if string(list) != `[{"key":"prefs/theme"}]` {
+			t.Fatalf("StoreList value = %s", list)
+		}
+		return []raplugin.SearchResult{{
+			ID:    "result:" + plugin.ID,
+			Title: plugin.ID,
+			Action: raplugin.Action{
+				CapabilityID: "main",
+			},
+		}}, nil
+	}
+
+	registry := Registry{Plugins: []Plugin{searchTestPlugin("store-plugin")}}
+	results := registry.SearchWithContext(context.Background(), SearchRequest{
+		Query: "query",
+		Limit: 10,
+		HostAPI: HostAPI{
+			StoreGet: func(pluginID string, key string) (json.RawMessage, bool, error) {
+				calls = append(calls, "get:"+pluginID+":"+key)
+				return json.RawMessage(`{"theme":"dark"}`), true, nil
+			},
+			StoreSet: func(pluginID string, key string, value json.RawMessage) error {
+				calls = append(calls, "set:"+pluginID+":"+key+":"+string(value))
+				return nil
+			},
+			StoreDelete: func(pluginID string, key string) error {
+				calls = append(calls, "delete:"+pluginID+":"+key)
+				return nil
+			},
+			StoreList: func(pluginID string, prefix string) (json.RawMessage, error) {
+				calls = append(calls, "list:"+pluginID+":"+prefix)
+				return json.RawMessage(`[{"key":"prefs/theme"}]`), nil
+			},
+		},
+	})
+
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1: %#v", len(results), results)
+	}
+	wantCalls := []string{
+		"get:store-plugin:prefs/theme",
+		"set:store-plugin:prefs/theme:{\"theme\":\"light\"}",
+		"delete:store-plugin:prefs/theme",
+		"list:store-plugin:prefs/",
+	}
+	if got, want := strings.Join(calls, ","), strings.Join(wantCalls, ","); got != want {
+		t.Fatalf("store calls = %q, want %q", got, want)
 	}
 }
 
