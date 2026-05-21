@@ -284,6 +284,9 @@ func (s *LauncherService) InvokePluginAction(request PluginActionRequest) (Invok
 	if result, ok, err := s.invokePluginManagerAction(action); ok {
 		return result, err
 	}
+	if result, ok, err := s.invokePluginStoreAction(action); ok {
+		return result, err
+	}
 	if action.Type == "app.launch" {
 		entry, ok := s.findDesktopEntry(action.AppID)
 		if !ok {
@@ -486,6 +489,10 @@ func permissionForAction(actionType string) (string, bool) {
 		return "apps:launch", true
 	case "plugins.state", "plugins.install", "plugins.setEnabled", "plugins.setCapabilityEnabled", "plugins.uninstall", "plugins.refresh":
 		return "plugins:manage", true
+	case "store.get", "store.list":
+		return "store:read", true
+	case "store.set", "store.delete":
+		return "store:write", true
 	default:
 		return "", false
 	}
@@ -571,6 +578,70 @@ func (s *LauncherService) invokePluginManagerAction(action Action) (InvokeResult
 			return InvokeResult{}, true, err
 		}
 		return InvokeResult{Type: "plugins.state", Data: s.PluginManagerState()}, true, nil
+	default:
+		return InvokeResult{}, false, nil
+	}
+}
+
+func (s *LauncherService) invokePluginStoreAction(action Action) (InvokeResult, bool, error) {
+	switch action.Type {
+	case "store.get":
+		var payload struct {
+			Key string `json:"key"`
+		}
+		if err := decodeActionPayload(action.Text, &payload); err != nil {
+			return InvokeResult{}, true, err
+		}
+		raw, found, err := s.pluginStoreGet(action.PluginID, payload.Key)
+		if err != nil {
+			return InvokeResult{}, true, err
+		}
+		var value any
+		if found {
+			if err := json.Unmarshal(raw, &value); err != nil {
+				return InvokeResult{}, true, fmt.Errorf("decode plugin store value: %w", err)
+			}
+		}
+		return InvokeResult{Type: action.Type, Data: map[string]any{"found": found, "value": value}}, true, nil
+	case "store.set":
+		var payload struct {
+			Key   string          `json:"key"`
+			Value json.RawMessage `json:"value"`
+		}
+		if err := decodeActionPayload(action.Text, &payload); err != nil {
+			return InvokeResult{}, true, err
+		}
+		if err := s.pluginStoreSet(action.PluginID, payload.Key, payload.Value); err != nil {
+			return InvokeResult{}, true, err
+		}
+		return InvokeResult{Type: action.Type}, true, nil
+	case "store.delete":
+		var payload struct {
+			Key string `json:"key"`
+		}
+		if err := decodeActionPayload(action.Text, &payload); err != nil {
+			return InvokeResult{}, true, err
+		}
+		if err := s.pluginStoreDelete(action.PluginID, payload.Key); err != nil {
+			return InvokeResult{}, true, err
+		}
+		return InvokeResult{Type: action.Type}, true, nil
+	case "store.list":
+		var payload struct {
+			Prefix string `json:"prefix"`
+		}
+		if err := decodeActionPayload(action.Text, &payload); err != nil {
+			return InvokeResult{}, true, err
+		}
+		raw, err := s.pluginStoreList(action.PluginID, payload.Prefix)
+		if err != nil {
+			return InvokeResult{}, true, err
+		}
+		var items []any
+		if err := json.Unmarshal(raw, &items); err != nil {
+			return InvokeResult{}, true, fmt.Errorf("decode plugin store list: %w", err)
+		}
+		return InvokeResult{Type: action.Type, Data: map[string]any{"items": items}}, true, nil
 	default:
 		return InvokeResult{}, false, nil
 	}

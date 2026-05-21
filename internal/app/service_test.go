@@ -505,6 +505,170 @@ func TestPluginInvokeAllowsDeclaredPermissionForEnabledCapability(t *testing.T) 
 	}
 }
 
+func TestPluginInvokeStoreRequiresDeclaredPermission(t *testing.T) {
+	root := t.TempDir()
+	user := filepath.Join(root, "user")
+	writeCodecPluginNoPermissions(t, user)
+
+	service := NewLauncherService(Config{
+		PluginRoots:      []string{user},
+		UserPluginRoot:   user,
+		PluginConfigPath: filepath.Join(root, "config", "plugins.json"),
+		PluginStorePath:  filepath.Join(root, "config", "plugin-store.db"),
+		BuiltinPlugins:   builtinTestPlugins(t),
+	})
+	if err := service.RefreshPlugins(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := service.InvokePluginAction(PluginActionRequest{
+		PluginID:     "codec-tools",
+		CapabilityID: "base64",
+		Action:       Action{Type: "store.get", Text: mustJSON(t, map[string]any{"key": "current"})},
+	})
+	if err == nil {
+		t.Fatal("expected store read permission error")
+	}
+	if got := err.Error(); got != `plugin "codec-tools" does not declare permission "store:read"` {
+		t.Fatalf("error = %q", got)
+	}
+}
+
+func TestPluginInvokeStoreActionsUseCurrentPluginID(t *testing.T) {
+	root := t.TempDir()
+	user := filepath.Join(root, "user")
+	writeTestPlugin(t, user, "store-actions", "./internal/app/testdata/storeactionplugin")
+	writeTestPlugin(t, user, "store-actions-other", "./internal/app/testdata/storeactionotherplugin")
+
+	service := NewLauncherService(Config{
+		PluginRoots:      []string{user},
+		UserPluginRoot:   user,
+		PluginConfigPath: filepath.Join(root, "config", "plugins.json"),
+		PluginStorePath:  filepath.Join(root, "config", "plugin-store.db"),
+		BuiltinPlugins:   builtinTestPlugins(t),
+	})
+	if err := service.RefreshPlugins(); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := service.InvokePluginAction(PluginActionRequest{
+		PluginID:     "store-actions",
+		CapabilityID: "persist",
+		Action: Action{
+			Type: "store.set",
+			Text: mustJSON(t, map[string]any{
+				"key":   "papers/current",
+				"value": map[string]any{"id": "paper-1"},
+			}),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Type != "store.set" {
+		t.Fatalf("set result = %#v", result)
+	}
+
+	result, err = service.InvokePluginAction(PluginActionRequest{
+		PluginID:     "store-actions",
+		CapabilityID: "persist",
+		Action:       Action{Type: "store.get", Text: mustJSON(t, map[string]any{"key": "papers/current"})},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotGet, ok := result.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("get data = %#v", result.Data)
+	}
+	if gotGet["found"] != true {
+		t.Fatalf("get data = %#v", gotGet)
+	}
+	gotValue, ok := gotGet["value"].(map[string]any)
+	if !ok || gotValue["id"] != "paper-1" {
+		t.Fatalf("get value = %#v", gotGet["value"])
+	}
+
+	if _, err := service.InvokePluginAction(PluginActionRequest{
+		PluginID:     "store-actions",
+		CapabilityID: "persist",
+		Action: Action{
+			Type: "store.set",
+			Text: mustJSON(t, map[string]any{
+				"key":   "papers/archive",
+				"value": map[string]any{"id": "paper-0"},
+			}),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.pluginStoreSet("store-actions-other", "papers/current", []byte(`{"id":"other-paper"}`)); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err = service.InvokePluginAction(PluginActionRequest{
+		PluginID:     "store-actions",
+		CapabilityID: "persist",
+		Action:       Action{Type: "store.list", Text: mustJSON(t, map[string]any{"prefix": "papers/"})},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotList, ok := result.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("list data = %#v", result.Data)
+	}
+	items, ok := gotList["items"].([]any)
+	if !ok || len(items) != 2 {
+		t.Fatalf("list items = %#v", gotList["items"])
+	}
+	first, ok := items[0].(map[string]any)
+	if !ok || first["id"] != "paper-0" {
+		t.Fatalf("first list item = %#v", items[0])
+	}
+	second, ok := items[1].(map[string]any)
+	if !ok || second["id"] != "paper-1" {
+		t.Fatalf("second list item = %#v", items[1])
+	}
+
+	result, err = service.InvokePluginAction(PluginActionRequest{
+		PluginID:     "store-actions-other",
+		CapabilityID: "persist",
+		Action:       Action{Type: "store.get", Text: mustJSON(t, map[string]any{"key": "papers/current"})},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotOtherPlugin, ok := result.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("other plugin get data = %#v", result.Data)
+	}
+	gotOtherValue, ok := gotOtherPlugin["value"].(map[string]any)
+	if !ok || gotOtherValue["id"] != "other-paper" {
+		t.Fatalf("other plugin get value = %#v", gotOtherPlugin["value"])
+	}
+
+	if _, err := service.InvokePluginAction(PluginActionRequest{
+		PluginID:     "store-actions",
+		CapabilityID: "persist",
+		Action:       Action{Type: "store.delete", Text: mustJSON(t, map[string]any{"key": "papers/current"})},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, err = service.InvokePluginAction(PluginActionRequest{
+		PluginID:     "store-actions",
+		CapabilityID: "persist",
+		Action:       Action{Type: "store.get", Text: mustJSON(t, map[string]any{"key": "papers/current"})},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotDeleted, ok := result.Data.(map[string]any)
+	if !ok || gotDeleted["found"] != false {
+		t.Fatalf("deleted get data = %#v", result.Data)
+	}
+}
+
 func TestPluginInvokeRejectsMismatchedActionCapability(t *testing.T) {
 	root := t.TempDir()
 	user := filepath.Join(root, "user")
