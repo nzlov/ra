@@ -21,33 +21,69 @@
 
       main {
         display: grid;
-        gap: 12px;
+        gap: 14px;
       }
 
-      input {
+      header {
+        display: grid;
+        gap: 4px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 22px;
+      }
+
+      p {
+        margin: 0;
+        color: #5f6b7a;
+      }
+
+      .sheet {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(130px, 34%);
+        gap: 10px;
+      }
+
+      textarea,
+      .results {
         width: 100%;
         border: 1px solid #cbd5df;
         border-radius: 7px;
         padding: 12px;
+        background: #ffffff;
         color: #111827;
-        font: inherit;
-        font-size: 20px;
+        font: 18px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      textarea {
+        min-height: 320px;
+        resize: vertical;
         outline: 0;
       }
 
-      input:focus {
+      textarea:focus {
         border-color: #2f6f4e;
       }
 
-      output {
-        display: block;
-        min-height: 52px;
-        border: 1px solid #d6dde6;
-        border-radius: 7px;
-        background: #ffffff;
-        color: #111827;
-        padding: 12px;
-        font-size: 24px;
+      .results {
+        min-height: 320px;
+        color: #2f6f4e;
+        white-space: pre-wrap;
+      }
+
+      .line {
+        min-height: 1.6em;
+      }
+
+      .invalid {
+        color: #b42318;
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
       }
 
       button {
@@ -59,18 +95,49 @@
         padding: 8px 12px;
         font: inherit;
       }
+
+      #status {
+        color: #5f6b7a;
+      }
+
+      @media (max-width: 640px) {
+        body {
+          padding: 12px;
+        }
+
+        .sheet {
+          grid-template-columns: 1fr;
+        }
+
+        textarea,
+        .results {
+          min-height: 220px;
+        }
+      }
     </style>
   </head>
   <body>
     <main>
-      <input id="query" autocomplete="off" spellcheck="false" />
-      <output id="result"></output>
-      <button id="copy" type="button">Copy</button>
+      <header>
+        <h1>Calculation Paper</h1>
+        <p>One expression per line. The current paper is saved automatically.</p>
+      </header>
+      <section class="sheet">
+        <textarea id="paper" autocomplete="off" spellcheck="false"></textarea>
+        <div id="results" class="results" aria-live="polite"></div>
+      </section>
+      <div class="toolbar">
+        <button id="copy" type="button">Copy results</button>
+        <span id="status">Loading</span>
+      </div>
     </main>
     <script>
-      const query = document.querySelector('#query');
-      const result = document.querySelector('#result');
+      const STORE_KEY = 'papers/current';
+      const paper = document.querySelector('#paper');
+      const results = document.querySelector('#results');
       const copy = document.querySelector('#copy');
+      const status = document.querySelector('#status');
+      let saveTimer = 0;
 
       function calculate(value) {
         const expression = value.trim().replace(/^=/, '');
@@ -88,6 +155,10 @@
         } catch {
           return 'Invalid expression';
         }
+      }
+
+      function calculateLines(text) {
+        return text.split('\n').map(calculate);
       }
 
       class Parser {
@@ -172,18 +243,86 @@
         }
       }
 
-      function update() {
-        result.value = calculate(query.value);
+      function render() {
+        const lines = calculateLines(paper.value);
+        results.replaceChildren(
+          ...lines.map((line) => {
+            const item = document.createElement('div');
+            item.className = line === 'Invalid expression' ? 'line invalid' : 'line';
+            item.textContent = line;
+            return item;
+          })
+        );
+        return lines;
       }
 
-      query.value = new URLSearchParams(location.search).get('q') || '';
-      query.addEventListener('input', update);
+      function storePayload(value) {
+        return JSON.stringify(value);
+      }
+
+      async function invoke(type, value) {
+        if (!window.ra) {
+          return undefined;
+        }
+        const result = await window.ra.invoke({type, text: storePayload(value)});
+        return result && result.data;
+      }
+
+      async function loadPaper() {
+        const queryExpression = new URLSearchParams(location.search).get('q') || '';
+        try {
+          const stored = await invoke('store.get', {key: STORE_KEY});
+          const storedText = stored && stored.found && stored.value && typeof stored.value.text === 'string'
+            ? stored.value.text
+            : '';
+          paper.value = appendExpression(storedText, queryExpression);
+          status.textContent = stored && stored.found ? 'Restored' : 'Ready';
+        } catch (error) {
+          paper.value = appendExpression('', queryExpression);
+          status.textContent = `Store unavailable: ${error.message || error}`;
+        }
+        render();
+        scheduleSave();
+        paper.focus();
+      }
+
+      function appendExpression(text, expression) {
+        const cleaned = expression.trim().replace(/^=/, '').trim();
+        if (!cleaned) {
+          return text;
+        }
+        if (!text.trim()) {
+          return cleaned;
+        }
+        return `${text.replace(/\s+$/, '')}\n${cleaned}`;
+      }
+
+      function scheduleSave() {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(savePaper, 150);
+      }
+
+      async function savePaper() {
+        try {
+          await invoke('store.set', {key: STORE_KEY, value: {text: paper.value}});
+          status.textContent = 'Saved';
+        } catch (error) {
+          status.textContent = `Save failed: ${error.message || error}`;
+        }
+      }
+
+      function update() {
+        render();
+        scheduleSave();
+      }
+
+      paper.addEventListener('input', update);
       copy.addEventListener('click', async () => {
-        if (!result.value || !window.ra) return;
-        await window.ra.invoke({type: 'clipboard.write', text: result.value});
+        const text = calculateLines(paper.value).filter(Boolean).join('\n');
+        if (!text || !window.ra) return;
+        await window.ra.invoke({type: 'clipboard.write', text});
       });
-      update();
-      query.focus();
+      loadPaper();
     </script>
   </body>
 </html>
