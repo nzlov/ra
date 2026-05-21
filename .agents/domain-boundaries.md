@@ -41,9 +41,10 @@
 
 - Block: 3.1
 - Purpose: Own launcher service orchestration, desktop entry loading, search result shaping, action execution, plugin asset serving, and the service APIs exposed to Wails/frontend.
-- Does Not Own: Low-level plugin package validation, WASM execution internals, plugin source behavior, frontend presentation.
+- Does Not Own: Low-level plugin package validation, WASM execution internals, plugin management persistence policy, plugin source behavior, frontend presentation.
 - Primary Paths:
   - internal/app/
+  - internal/app/actions.go
   - main.go
   - window_options_test.go
   - webkit_env.go
@@ -225,6 +226,7 @@
 - Does Not Own: Runtime behavior or API truth when code differs from docs.
 - Primary Paths:
   - README.md
+  - README.zh-CN.md
   - docs/
   - examples/
   - plugins/README.md
@@ -260,6 +262,9 @@
 - Path: frontend/bindings/
 - Risk: medium
 - Rule: Generated Wails bindings; regenerate through the established toolchain rather than hand-editing.
+- Path: Taskfile.yml
+- Risk: medium
+- Rule: Shared build, package, and generation orchestration; do not use as a casual parallel-write target.
 - Path: plugins/builtins_data.go
 - Risk: medium
 - Rule: Generated/build output; do not commit or edit unless the task explicitly requires generated built-in assets.
@@ -283,11 +288,11 @@
 ## 6. Open Questions
 
 - Block: 6
-- The exact ownership split between 3.1 Core App Service And Search and 3.2 Plugin Registry And Management around plugin config persistence may need refinement after the next management-focused change.
-- The `window.ra` bridge boundary spans backend asset rewriting and frontend/plugin UI behavior; this map records it as dependent on 3.1 and 3.6 but may need its own context if it grows.
-- Build/generation ownership for embedded built-ins is not fully documented here; keep generated output excluded unless a task explicitly targets it.
+- None.
 
 ## 7. Change Log
 
 - Block: 7
 - 2026-05-21 Initial minimal boundary map for RA repository-level DDD orchestration.
+- 2026-05-21 Clarified plugin management persistence belongs to registry/management, not core search orchestration.
+- 2026-05-21 Added explicit app action, Chinese README, and Taskfile shared-orchestration boundaries.
