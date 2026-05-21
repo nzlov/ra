@@ -136,6 +136,7 @@
       const results = document.querySelector('#results');
       const copy = document.querySelector('#copy');
       const status = document.querySelector('#status');
+      const paperKey = 'papers/current';
 
       function calculate(value) {
         const expression = value.trim().replace(/^=/, '');
@@ -254,12 +255,32 @@
         return lines;
       }
 
-      function loadPaper() {
+      async function loadPaper() {
+        paper.value = await loadStoredPaper();
         const queryExpression = new URLSearchParams(location.search).get('q') || '';
+        const previous = paper.value;
         paper.value = appendExpression(paper.value, queryExpression);
+        if (paper.value !== previous) {
+          await savePaper();
+        }
         status.textContent = 'Ready';
         render();
         paper.focus();
+      }
+
+      async function loadStoredPaper() {
+        if (!window.ra) {
+          return '';
+        }
+        const result = await window.ra.invoke({type: 'store.get', key: paperKey});
+        return typeof result?.value === 'string' ? result.value : '';
+      }
+
+      async function savePaper() {
+        if (!window.ra) {
+          return;
+        }
+        await window.ra.invoke({type: 'store.set', key: paperKey, value: paper.value});
       }
 
       function appendExpression(text, expression) {
@@ -273,8 +294,9 @@
         return `${text.replace(/\s+$/, '')}\n${cleaned}`;
       }
 
-      function update() {
+      async function update() {
         render();
+        await savePaper();
       }
 
       paper.addEventListener('input', update);

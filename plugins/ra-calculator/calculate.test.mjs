@@ -6,8 +6,25 @@ const html = fs.readFileSync(new URL('./assets/calculator/index.html', import.me
 const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
 assert.ok(script, 'calculator script should be embedded');
 
+function makeElement(value = '') {
+  const listeners = new Map();
+  return {
+    value,
+    addEventListener(type, listener) {
+      listeners.set(type, listener);
+    },
+    focus() {},
+    dispatch(type) {
+      const listener = listeners.get(type);
+      assert.ok(listener, `missing listener ${type}`);
+      return listener();
+    },
+  };
+}
+
+const paper = makeElement();
 const elements = new Map([
-  ['#paper', {value: '', addEventListener() {}, focus() {}}],
+  ['#paper', paper],
   ['#results', {replaceChildren(...items) { this.items = items; }, items: []}],
   ['#status', {textContent: ''}],
   ['#copy', {addEventListener() {}}],
@@ -31,22 +48,32 @@ const context = vm.createContext({
     ra: {
       async invoke(action) {
         calls.push(action);
-        return {data: {}};
+        if (action.type === 'store.get') {
+          return {value: '1+1\n=2*3'};
+        }
+        return {ok: true};
       },
     },
   },
 });
 
 vm.runInContext(script, context, {filename: 'calculator/index.html'});
+await new Promise(setImmediate);
 
 assert.equal(context.calculate('2+3*4'), '14');
 assert.equal(context.calculate('(2+3)*4'), '20');
 assert.equal(context.calculate('2/0'), 'Invalid expression');
 assert.equal(context.calculate('2+bad'), 'Invalid expression');
 assert.deepEqual(Array.from(context.calculateLines('1+1\n=2*3\n\nbad')), ['2', '6', '', 'Invalid expression']);
-assert.equal(elements.get('#paper').value, '2+1');
+assert.equal(paper.value, '1+1\n=2*3\n2+1');
 assert.deepEqual(
   elements.get('#results').items.map((item) => item.textContent),
-  ['3']
+  ['2', '6', '3']
 );
-assert.deepEqual(calls, []);
+paper.value = `${paper.value}\n4+5`;
+await paper.dispatch('input');
+assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+  {type: 'store.get', key: 'papers/current'},
+  {type: 'store.set', key: 'papers/current', value: '1+1\n=2*3\n2+1'},
+  {type: 'store.set', key: 'papers/current', value: '1+1\n=2*3\n2+1\n4+5'},
+]);
