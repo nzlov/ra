@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,6 +32,7 @@ type Config struct {
 type LauncherService struct {
 	config         Config
 	desktopEntries []desktop.Entry
+	pluginApps     []raplugin.App
 	pluginRegistry plugins.Registry
 	pluginConfig   PluginConfig
 	actions        ActionExecutor
@@ -117,7 +119,7 @@ func (s *LauncherService) Refresh() error {
 	if err != nil {
 		return err
 	}
-	s.desktopEntries = entries
+	s.setDesktopEntries(entries)
 	return s.RefreshPlugins()
 }
 
@@ -150,11 +152,16 @@ func (s *LauncherService) RefreshPlugins() error {
 
 func (s *LauncherService) setDesktopEntries(entries []desktop.Entry) {
 	s.desktopEntries = entries
+	s.pluginApps = desktopEntriesForPlugins(entries)
 }
 
 func (s *LauncherService) Search(query string) []Result {
+	return s.SearchWithContext(context.Background(), query)
+}
+
+func (s *LauncherService) SearchWithContext(ctx context.Context, query string) []Result {
 	results := make([]Result, 0, s.config.Limit)
-	for _, result := range s.searchPlugins(query, s.config.Limit) {
+	for _, result := range s.searchPlugins(ctx, query, s.config.Limit) {
 		results = append(results, Result{
 			ID:       result.ID,
 			Title:    result.Title,
@@ -174,12 +181,12 @@ func (s *LauncherService) Search(query string) []Result {
 	return results
 }
 
-func (s *LauncherService) searchPlugins(query string, limit int) []plugins.Result {
+func (s *LauncherService) searchPlugins(ctx context.Context, query string, limit int) []plugins.Result {
 	registry := s.pluginRegistry
-	return registry.SearchWithContext(plugins.SearchRequest{
+	return registry.SearchWithContext(ctx, plugins.SearchRequest{
 		Query:   query,
 		Limit:   limit,
-		HostAPI: plugins.HostAPI{Apps: desktopEntriesForPlugins(s.desktopEntries)},
+		HostAPI: plugins.HostAPI{Apps: s.pluginApps},
 	})
 }
 

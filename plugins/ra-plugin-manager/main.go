@@ -24,6 +24,7 @@ func init() {
 			UI:       "/manager/index.html",
 			Icon:     "/icons/plugins.svg",
 			Keywords: []string{"plugin", "plugins", "manager"},
+			Match:    raplugin.Match{Mode: "contains_all_tokens", Pattern: "plugin plugins manager"},
 		}},
 		Assets: raplugin.MustAssets(assets, "assets"),
 		Search: searchManager,

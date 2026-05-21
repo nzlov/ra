@@ -1,6 +1,7 @@
 package pluginruntime
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -57,6 +58,20 @@ func TestSearchCallsRealGoWASMPluginWithRAAPIData(t *testing.T) {
 	}
 	if result.Action.AppID != "firefox" {
 		t.Fatalf("action = %#v", result.Action)
+	}
+}
+
+func TestSearchWithContextReturnsCanceledContextError(t *testing.T) {
+	wasm := buildTestPlugin(t, "appsearch")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := SearchWithContext(ctx, wasm, raplugin.SearchRequest{Query: "fire"})
+	if err == nil {
+		t.Fatal("SearchWithContext error = nil, want context canceled")
+	}
+	if err != context.Canceled {
+		t.Fatalf("SearchWithContext error = %v, want %v", err, context.Canceled)
 	}
 }
 

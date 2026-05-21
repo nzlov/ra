@@ -16,6 +16,13 @@ type Capability struct {
 	Icon     string   `json:"icon,omitempty"`
 	UI       string   `json:"ui"`
 	Keywords []string `json:"keywords,omitempty"`
+	Match    Match    `json:"match,omitempty"`
+}
+
+type Match struct {
+	Regex   string `json:"regex,omitempty"`
+	Mode    string `json:"mode,omitempty"`
+	Pattern string `json:"pattern,omitempty"`
 }
 
 type Plugin struct {

@@ -47,6 +47,12 @@ export function Search(query: string): $CancellablePromise<$models.Result[]> {
     });
 }
 
+export function SearchWithContext(query: string): $CancellablePromise<$models.Result[]> {
+    return $Call.ByID(545013851, query).then(($result: any) => {
+        return $$createType4($result);
+    });
+}
+
 export function SetCapabilityEnabled(pluginID: string, capabilityID: string, enabled: boolean): $CancellablePromise<$models.PluginManagerState> {
     return $Call.ByID(1132286559, pluginID, capabilityID, enabled).then(($result: any) => {
         return $$createType2($result);

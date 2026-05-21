@@ -99,3 +99,77 @@ test('ignores stale responses after a newer query is scheduled', async () => {
   assert.deepEqual(calls, ['f', 'fi']);
   assert.deepEqual(applied, [{query: 'fi', results: ['new']}]);
 });
+
+test('cancels an in-flight search when searchNow supersedes it', async () => {
+  const cancelled = [];
+  const applied = [];
+  const resolvers = new Map();
+  const scheduler = createSearchScheduler({
+    delay: 100,
+    search: (query) => {
+      const promise = new Promise((resolve) => {
+        resolvers.set(query, resolve);
+      });
+      promise.cancel = () => {
+        cancelled.push(query);
+      };
+      return promise;
+    },
+    onResults: (results, query) => {
+      applied.push({query, results});
+    },
+    onError: () => assert.fail('unexpected search error')
+  });
+
+  const first = scheduler.searchNow('f');
+  const second = scheduler.searchNow('fi');
+
+  assert.deepEqual(cancelled, ['f']);
+
+  resolvers.get('f')(['old']);
+  await first;
+  assert.deepEqual(applied, []);
+
+  resolvers.get('fi')(['new']);
+  await second;
+  assert.deepEqual(applied, [{query: 'fi', results: ['new']}]);
+});
+
+test('cancels an in-flight search when a scheduled search starts', async () => {
+  const timers = new FakeTimers();
+  const cancelled = [];
+  const applied = [];
+  const resolvers = new Map();
+  const scheduler = createSearchScheduler({
+    delay: 100,
+    setTimer: timers.setTimeout.bind(timers),
+    clearTimer: timers.clearTimeout.bind(timers),
+    search: (query) => {
+      const promise = new Promise((resolve) => {
+        resolvers.set(query, resolve);
+      });
+      promise.cancel = () => {
+        cancelled.push(query);
+      };
+      return promise;
+    },
+    onResults: (results, query) => {
+      applied.push({query, results});
+    },
+    onError: () => assert.fail('unexpected search error')
+  });
+
+  const first = scheduler.searchNow('f');
+  scheduler.schedule('fi');
+  assert.deepEqual(cancelled, ['f']);
+
+  await timers.tick(100);
+
+  resolvers.get('f')(['old']);
+  await first;
+  assert.deepEqual(applied, []);
+
+  resolvers.get('fi')(['new']);
+  await Promise.resolve();
+  assert.deepEqual(applied, [{query: 'fi', results: ['new']}]);
+});

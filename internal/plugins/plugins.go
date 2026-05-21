@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -18,11 +19,11 @@ import (
 
 var idPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-_.]*$`)
 var compilePluginRuntime = pluginruntime.Compile
-var runPluginSearch = func(plugin Plugin, request raplugin.SearchRequest, api pluginruntime.HostAPI) ([]raplugin.SearchResult, error) {
+var runPluginSearch = func(ctx context.Context, plugin Plugin, request raplugin.SearchRequest, api pluginruntime.HostAPI) ([]raplugin.SearchResult, error) {
 	if plugin.Runtime == nil {
 		return nil, nil
 	}
-	return plugin.Runtime.Search(request, api)
+	return plugin.Runtime.SearchWithContext(ctx, request, api)
 }
 
 type Registry struct {
@@ -57,12 +58,14 @@ type Plugin struct {
 }
 
 type Capability struct {
-	ID       string   `json:"id"`
-	Title    string   `json:"title"`
-	Icon     string   `json:"icon,omitempty"`
-	UI       string   `json:"ui"`
-	Keywords []string `json:"keywords,omitempty"`
-	Disabled bool     `json:"-"`
+	ID       string         `json:"id"`
+	Title    string         `json:"title"`
+	Icon     string         `json:"icon,omitempty"`
+	UI       string         `json:"ui"`
+	Keywords []string       `json:"keywords,omitempty"`
+	Match    raplugin.Match `json:"match,omitempty"`
+	Disabled bool           `json:"-"`
+	matcher  capabilityMatcher
 }
 
 type LoadError struct {
@@ -193,10 +196,13 @@ func addPlugin(plugin Plugin, registry *Registry, seenPlugins map[string]string)
 }
 
 func (r Registry) Search(query string, limit int) []Result {
-	return r.SearchWithContext(SearchRequest{Query: query, Limit: limit})
+	return r.SearchWithContext(context.Background(), SearchRequest{Query: query, Limit: limit})
 }
 
-func (r Registry) SearchWithContext(request SearchRequest) []Result {
+func (r Registry) SearchWithContext(ctx context.Context, request SearchRequest) []Result {
+	if err := ctx.Err(); err != nil {
+		return nil
+	}
 	trimmed := strings.TrimSpace(request.Query)
 	type searchResultSet struct {
 		index   int
@@ -211,12 +217,22 @@ func (r Registry) SearchWithContext(request SearchRequest) []Result {
 		if plugin.Disabled {
 			continue
 		}
+		if !pluginSearchableForQuery(plugin, trimmed) {
+			continue
+		}
 		wg.Add(1)
 		go func(index int, plugin Plugin) {
 			defer wg.Done()
-			sem <- struct{}{}
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
 			defer func() { <-sem }()
-			rawResults, err := runPluginSearch(plugin, raplugin.SearchRequest{
+			if err := ctx.Err(); err != nil {
+				return
+			}
+			rawResults, err := runPluginSearch(ctx, plugin, raplugin.SearchRequest{
 				Query: trimmed,
 				Limit: request.Limit,
 			}, pluginruntime.HostAPI{
@@ -236,6 +252,9 @@ func (r Registry) SearchWithContext(request SearchRequest) []Result {
 		}(i, plugin)
 	}
 	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return nil
+	}
 	sort.SliceStable(items, func(i, j int) bool {
 		return items[i].index < items[j].index
 	})
@@ -351,12 +370,17 @@ func loadWASMBytes(raw []byte, source string, sourcePath string) (Plugin, error)
 		_ = compiled.Close()
 		return Plugin{}, err
 	}
+	capabilities, err := capabilitiesFromBundle(bundle.Capabilities)
+	if err != nil {
+		_ = compiled.Close()
+		return Plugin{}, err
+	}
 	return Plugin{
 		ID:           bundle.Manifest.ID,
 		Name:         bundle.Manifest.Name,
 		Version:      bundle.Manifest.Version,
 		Permissions:  append([]string(nil), bundle.Manifest.Permissions...),
-		Capabilities: capabilitiesFromBundle(bundle.Capabilities),
+		Capabilities: capabilities,
 		Assets:       cloneAssets(bundle.Assets),
 		Raw:          append([]byte(nil), raw...),
 		Runtime:      compiled,
@@ -390,6 +414,9 @@ func validateBundle(bundle pluginruntime.Plugin) error {
 		if capability.Icon != "" && !validAssetPath(capability.Icon) {
 			return fmt.Errorf("invalid capability icon path %q", capability.Icon)
 		}
+		if err := validateCapabilityMatch(capability.Match); err != nil {
+			return fmt.Errorf("invalid capability match for %q: %w", capability.ID, err)
+		}
 	}
 	for assetPath := range bundle.Assets {
 		if !validAssetPath(assetPath) {
@@ -407,18 +434,24 @@ func validAssetPath(assetPath string) bool {
 	return strings.HasPrefix(assetPath, "/") && path.Clean(assetPath) == assetPath && !strings.Contains(assetPath, "\x00")
 }
 
-func capabilitiesFromBundle(items []raplugin.Capability) []Capability {
+func capabilitiesFromBundle(items []raplugin.Capability) ([]Capability, error) {
 	capabilities := make([]Capability, 0, len(items))
 	for _, item := range items {
+		matcher, err := compileCapabilityMatcher(item.Match)
+		if err != nil {
+			return nil, fmt.Errorf("compile capability %q matcher: %w", item.ID, err)
+		}
 		capabilities = append(capabilities, Capability{
 			ID:       item.ID,
 			Title:    item.Title,
 			Icon:     item.Icon,
 			UI:       item.UI,
 			Keywords: append([]string(nil), item.Keywords...),
+			Match:    item.Match,
+			matcher:  matcher,
 		})
 	}
-	return capabilities
+	return capabilities, nil
 }
 
 func cloneAssets(assets map[string][]byte) map[string][]byte {
@@ -427,4 +460,97 @@ func cloneAssets(assets map[string][]byte) map[string][]byte {
 		out[path] = append([]byte(nil), data...)
 	}
 	return out
+}
+
+type capabilityMatcher interface {
+	Match(query string) bool
+}
+
+type regexCapabilityMatcher struct {
+	re *regexp.Regexp
+}
+
+func (m regexCapabilityMatcher) Match(query string) bool {
+	return m.re.MatchString(query)
+}
+
+type containsAllTokensMatcher struct {
+	pattern string
+}
+
+func (m containsAllTokensMatcher) Match(query string) bool {
+	return containsAllTokens(query, m.pattern)
+}
+
+func validateCapabilityMatch(match raplugin.Match) error {
+	hasRegex := strings.TrimSpace(match.Regex) != ""
+	hasMode := strings.TrimSpace(match.Mode) != "" || strings.TrimSpace(match.Pattern) != ""
+	switch {
+	case !hasRegex && !hasMode:
+		return nil
+	case hasRegex && hasMode:
+		return errors.New("regex cannot be combined with mode or pattern")
+	case hasRegex:
+		_, err := regexp.Compile(match.Regex)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	mode := strings.TrimSpace(match.Mode)
+	pattern := strings.TrimSpace(match.Pattern)
+	if mode == "" {
+		return errors.New("mode is required when pattern is set")
+	}
+	if pattern == "" {
+		return errors.New("pattern is required when mode is set")
+	}
+	if mode != "contains_all_tokens" {
+		return fmt.Errorf("unsupported mode %q", mode)
+	}
+	return nil
+}
+
+func compileCapabilityMatcher(match raplugin.Match) (capabilityMatcher, error) {
+	if err := validateCapabilityMatch(match); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(match.Regex) != "" {
+		re, err := regexp.Compile(match.Regex)
+		if err != nil {
+			return nil, err
+		}
+		return regexCapabilityMatcher{re: re}, nil
+	}
+	if strings.TrimSpace(match.Mode) == "" {
+		return nil, nil
+	}
+	return containsAllTokensMatcher{pattern: match.Pattern}, nil
+}
+
+func pluginSearchableForQuery(plugin Plugin, query string) bool {
+	hasEnabledCapability := false
+	for _, capability := range plugin.Capabilities {
+		if capability.Disabled {
+			continue
+		}
+		hasEnabledCapability = true
+		if capability.matcher == nil {
+			return true
+		}
+		if capability.matcher.Match(query) {
+			return true
+		}
+	}
+	return !hasEnabledCapability
+}
+
+func containsAllTokens(query string, pattern string) bool {
+	haystack := strings.ToLower(pattern)
+	for _, token := range strings.Fields(strings.ToLower(query)) {
+		if !strings.Contains(haystack, token) {
+			return false
+		}
+	}
+	return true
 }

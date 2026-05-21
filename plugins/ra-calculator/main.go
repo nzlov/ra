@@ -26,6 +26,7 @@ func init() {
 			UI:       "/calculator/index.html",
 			Icon:     "/icons/calculator.svg",
 			Keywords: []string{"=", "calculator", "calc", "math"},
+			Match:    raplugin.Match{Regex: `^\s*=`},
 		}},
 		Assets: raplugin.MustAssets(assets, "assets"),
 		Search: searchCalculator,

@@ -24,6 +24,7 @@ func init() {
 			UI:       "/apps/index.html",
 			Icon:     "/icons/apps.svg",
 			Keywords: []string{"app", "apps", "application", "launch"},
+			Match:    raplugin.Match{Mode: "contains_all_tokens", Pattern: "app apps application launch"},
 		}},
 		Assets: raplugin.MustAssets(assets, "assets"),
 		Search: searchApps,
@@ -52,6 +53,9 @@ func searchApps(request raplugin.SearchRequest) []raplugin.SearchResult {
 				CapabilityID: "apps",
 			},
 		})
+		if request.Limit > 0 && len(results) >= request.Limit {
+			break
+		}
 	}
 	return results
 }

@@ -2,7 +2,7 @@
  * @template T
  * @typedef {object} SearchSchedulerOptions
  * @property {number} delay
- * @property {(query: string) => Promise<T> | T} search
+ * @property {(query: string) => (Promise<T> & {cancel?: () => void}) | T} search
  * @property {(results: T, query: string) => void} onResults
  * @property {(error: unknown, query: string) => void} onError
  * @property {(callback: () => void, delay: number) => number} [setTimer]
@@ -28,20 +28,39 @@ export function createSearchScheduler(options) {
   /** @type {number | null} */
   let timer = null;
   let version = 0;
+  /** @type {{cancel?: () => void} | null} */
+  let activeSearch = null;
+
+  function cancelActiveSearch() {
+    if (typeof activeSearch?.cancel === 'function') {
+      activeSearch.cancel();
+    }
+    activeSearch = null;
+  }
 
   /**
    * @param {string} query
    * @param {number} searchVersion
    */
   async function run(query, searchVersion) {
+    cancelActiveSearch();
+    let searchPromise;
     try {
-      const results = await options.search(query);
+      searchPromise = options.search(query);
+      if (searchPromise && typeof searchPromise === 'object') {
+        activeSearch = searchPromise;
+      }
+      const results = await searchPromise;
       if (searchVersion === version) {
         options.onResults(results, query);
       }
     } catch (error) {
       if (searchVersion === version) {
         options.onError(error, query);
+      }
+    } finally {
+      if (searchPromise && activeSearch === searchPromise) {
+        activeSearch = null;
       }
     }
   }
@@ -59,6 +78,7 @@ export function createSearchScheduler(options) {
       version += 1;
       const searchVersion = version;
       clearPendingTimer();
+      cancelActiveSearch();
       timer = setTimer(() => {
         timer = null;
         void run(query, searchVersion);
@@ -75,6 +95,7 @@ export function createSearchScheduler(options) {
     cancel() {
       version += 1;
       clearPendingTimer();
+      cancelActiveSearch();
     }
   };
   return scheduler;

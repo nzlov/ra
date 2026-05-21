@@ -1,13 +1,17 @@
 package app
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/nzlov/ra/internal/desktop"
+	"github.com/nzlov/ra/pkg/raplugin"
 )
 
 func TestSearchMergesCalculatorAppsAndCapabilities(t *testing.T) {
@@ -16,9 +20,10 @@ func TestSearchMergesCalculatorAppsAndCapabilities(t *testing.T) {
 	writeCodecPlugin(t, user)
 
 	service := NewLauncherService(Config{
-		PluginRoots:    []string{user},
-		UserPluginRoot: user,
-		BuiltinPlugins: builtinTestPlugins(t),
+		PluginRoots:      []string{user},
+		UserPluginRoot:   user,
+		PluginConfigPath: filepath.Join(root, "config", "plugins.json"),
+		BuiltinPlugins:   builtinTestPlugins(t),
 	})
 	service.setDesktopEntries([]desktop.Entry{{ID: "firefox", Name: "Firefox", Exec: "firefox %U"}})
 	if err := service.RefreshPlugins(); err != nil {
@@ -56,15 +61,75 @@ func TestSearchMergesCalculatorAppsAndCapabilities(t *testing.T) {
 	}
 }
 
+func TestSetDesktopEntriesUpdatesCachedPluginApps(t *testing.T) {
+	service := NewLauncherService(Config{})
+	entries := []desktop.Entry{{ID: "firefox", Name: "Firefox", Comment: "Browser", Exec: "firefox %U"}}
+
+	service.setDesktopEntries(entries)
+
+	want := []raplugin.App{{ID: "firefox", Name: "Firefox", Comment: "Browser"}}
+	if !reflect.DeepEqual(service.pluginApps, want) {
+		t.Fatalf("pluginApps = %#v, want %#v", service.pluginApps, want)
+	}
+}
+
+func TestRefreshUpdatesCachedPluginApps(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "applications")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "firefox.desktop"), []byte(`
+[Desktop Entry]
+Type=Application
+Name=Firefox
+Comment=Browser
+Exec=firefox %U
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewLauncherService(Config{DesktopDirs: []string{dir}})
+
+	if err := service.Refresh(); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []raplugin.App{{ID: "firefox", Name: "Firefox", Comment: "Browser"}}
+	if !reflect.DeepEqual(service.pluginApps, want) {
+		t.Fatalf("pluginApps = %#v, want %#v", service.pluginApps, want)
+	}
+}
+
+func TestSearchWithContextReturnsNoResultsWhenCanceled(t *testing.T) {
+	root := t.TempDir()
+	service := NewLauncherService(Config{
+		PluginConfigPath: filepath.Join(root, "config", "plugins.json"),
+		BuiltinPlugins:   builtinTestPlugins(t),
+	})
+	if err := service.RefreshPlugins(); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	results := service.SearchWithContext(ctx, "calculator")
+	if len(results) != 0 {
+		t.Fatalf("results = %#v", results)
+	}
+}
+
 func TestRefreshPluginsLoadsBuiltinAndUserWASMPlugins(t *testing.T) {
 	root := t.TempDir()
 	user := filepath.Join(root, "user")
 	writeCodecPlugin(t, user)
 
 	service := NewLauncherService(Config{
-		PluginRoots:    []string{user},
-		UserPluginRoot: user,
-		BuiltinPlugins: builtinTestPlugins(t),
+		PluginRoots:      []string{user},
+		UserPluginRoot:   user,
+		PluginConfigPath: filepath.Join(root, "config", "plugins.json"),
+		BuiltinPlugins:   builtinTestPlugins(t),
 	})
 	if err := service.RefreshPlugins(); err != nil {
 		t.Fatal(err)
@@ -184,9 +249,10 @@ func TestServeHTTPReturnsEnabledCapabilityAsset(t *testing.T) {
 	writeCodecPlugin(t, user)
 
 	service := NewLauncherService(Config{
-		PluginRoots:    []string{user},
-		UserPluginRoot: user,
-		BuiltinPlugins: builtinTestPlugins(t),
+		PluginRoots:      []string{user},
+		UserPluginRoot:   user,
+		PluginConfigPath: filepath.Join(root, "config", "plugins.json"),
+		BuiltinPlugins:   builtinTestPlugins(t),
 	})
 	if err := service.RefreshPlugins(); err != nil {
 		t.Fatal(err)
@@ -219,9 +285,10 @@ func TestServeHTTPAcceptsRoutePrefixedCapabilityAsset(t *testing.T) {
 	writeCodecPlugin(t, user)
 
 	service := NewLauncherService(Config{
-		PluginRoots:    []string{user},
-		UserPluginRoot: user,
-		BuiltinPlugins: builtinTestPlugins(t),
+		PluginRoots:      []string{user},
+		UserPluginRoot:   user,
+		PluginConfigPath: filepath.Join(root, "config", "plugins.json"),
+		BuiltinPlugins:   builtinTestPlugins(t),
 	})
 	if err := service.RefreshPlugins(); err != nil {
 		t.Fatal(err)
@@ -480,9 +547,10 @@ func TestInvokeLaunchesLoadedDesktopEntryOnly(t *testing.T) {
 	var gotCommand string
 	var gotArgs []string
 	service := NewLauncherService(Config{
-		PluginRoots:    []string{user},
-		UserPluginRoot: user,
-		BuiltinPlugins: builtinTestPlugins(t),
+		PluginRoots:      []string{user},
+		UserPluginRoot:   user,
+		PluginConfigPath: filepath.Join(root, "config", "plugins.json"),
+		BuiltinPlugins:   builtinTestPlugins(t),
 	})
 	service.actions = ActionExecutor{
 		RunCommand: func(command string, args []string, stdin string) error {

@@ -115,6 +115,10 @@ func (rt *Runtime) Close() error {
 }
 
 func Search(raw []byte, request raplugin.SearchRequest, api ...HostAPI) ([]raplugin.SearchResult, error) {
+	return SearchWithContext(context.Background(), raw, request, api...)
+}
+
+func SearchWithContext(ctx context.Context, raw []byte, request raplugin.SearchRequest, api ...HostAPI) ([]raplugin.SearchResult, error) {
 	rt, err := Compile(raw)
 	if err != nil {
 		return nil, err
@@ -123,20 +127,27 @@ func Search(raw []byte, request raplugin.SearchRequest, api ...HostAPI) ([]raplu
 	if len(api) > 0 {
 		rt.api = api[0]
 	}
-	return rt.Search(request)
+	return rt.SearchWithContext(ctx, request)
 }
 
 func (rt *Runtime) Search(request raplugin.SearchRequest, api ...HostAPI) ([]raplugin.SearchResult, error) {
+	return rt.SearchWithContext(context.Background(), request, api...)
+}
+
+func (rt *Runtime) SearchWithContext(ctx context.Context, request raplugin.SearchRequest, api ...HostAPI) ([]raplugin.SearchResult, error) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	if len(api) > 0 {
 		rt.api = api[0]
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	input, err := json.Marshal(request)
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
+	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
 	_, mod, err := rt.instantiate(ctx)
 	if err != nil {
