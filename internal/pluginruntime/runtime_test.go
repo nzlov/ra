@@ -154,6 +154,21 @@ func TestHostAPIRejectsAppListWithoutPermission(t *testing.T) {
 	}
 }
 
+func TestStoreHostAPIReadsAndWritesPluginScopedJSON(t *testing.T) {
+	wasm := buildTestPlugin(t, "storeplugin")
+
+	results, err := Search(wasm, raplugin.SearchRequest{Query: "store smoke"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d: %#v", len(results), results)
+	}
+	if results[0].Title != "store-ok" {
+		t.Fatalf("result = %#v", results[0])
+	}
+}
+
 func buildTestPlugin(t *testing.T, name string) []byte {
 	t.Helper()
 	output := filepath.Join(t.TempDir(), name+".wasm")
