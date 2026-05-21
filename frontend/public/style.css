@@ -101,6 +101,7 @@ input::placeholder {
 
 .results {
   display: grid;
+  align-content: start;
   min-height: 0;
   max-height: none;
   overflow: auto;

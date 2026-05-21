@@ -26,3 +26,8 @@ test('launcher surface fills the transparent window', () => {
   assert.match(results, /max-height:\s*none;/);
   assert.match(results, /min-height:\s*0;/);
 });
+
+test('search result rows keep their content height when the list has spare space', () => {
+  const results = rule('.results');
+  assert.match(results, /align-content:\s*start;/);
+});

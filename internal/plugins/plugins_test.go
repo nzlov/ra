@@ -136,8 +136,8 @@ func TestSearchWithContextRunsPluginSearchConcurrentlyWithRuntimeLimit(t *testin
 		releaseOnce.Do(func() { close(release) })
 	})
 
-	runPluginSearch = func(raw []byte, request raplugin.SearchRequest, api ...pluginruntime.HostAPI) ([]raplugin.SearchResult, error) {
-		id := string(raw)
+	runPluginSearch = func(plugin Plugin, request raplugin.SearchRequest, api pluginruntime.HostAPI) ([]raplugin.SearchResult, error) {
+		id := string(plugin.Raw)
 		current := atomic.AddInt32(&active, 1)
 		for {
 			seen := atomic.LoadInt32(&maxActive)

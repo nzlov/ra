@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/nzlov/ra/pkg/raplugin"
@@ -57,6 +58,71 @@ func TestSearchCallsRealGoWASMPluginWithRAAPIData(t *testing.T) {
 	if result.Action.AppID != "firefox" {
 		t.Fatalf("action = %#v", result.Action)
 	}
+}
+
+func TestCompiledPluginSearchesWithoutRecompilingWASM(t *testing.T) {
+	wasm := buildTestPlugin(t, "appsearch")
+	compiled, err := Compile(wasm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer compiled.Close()
+
+	for _, query := range []string{"fire", "browser"} {
+		results, err := compiled.Search(raplugin.SearchRequest{
+			Query: query,
+			Limit: 5,
+		}, HostAPI{
+			Permissions: []string{"apps:read", "apps:launch"},
+			Apps: []raplugin.App{{
+				ID:      "firefox",
+				Name:    "Firefox",
+				Comment: "Browser",
+			}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 1 || results[0].Action.AppID != "firefox" {
+			t.Fatalf("results for %q = %#v", query, results)
+		}
+	}
+}
+
+func TestCompiledPluginSerializesConcurrentSearches(t *testing.T) {
+	wasm := buildTestPlugin(t, "appsearch")
+	compiled, err := Compile(wasm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer compiled.Close()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results, err := compiled.Search(raplugin.SearchRequest{
+				Query: "fire",
+				Limit: 5,
+			}, HostAPI{
+				Permissions: []string{"apps:read", "apps:launch"},
+				Apps: []raplugin.App{{
+					ID:      "firefox",
+					Name:    "Firefox",
+					Comment: "Browser",
+				}},
+			})
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			if len(results) != 1 || results[0].Action.AppID != "firefox" {
+				t.Errorf("results = %#v", results)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestHostAPIRejectsAppListWithoutPermission(t *testing.T) {

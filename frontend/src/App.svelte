@@ -2,7 +2,7 @@
   import {onMount} from 'svelte';
   import {Events, Window} from '@wailsio/runtime';
   import {LauncherService} from '../bindings/github.com/nzlov/ra/internal/app';
-  import {shouldCloseForEscape, shouldReturnToLauncherForEscape} from './launcherWindowBehavior.js';
+  import {launcherStateForOpen, shouldHideForEscape, shouldReturnToLauncherForEscape} from './launcherWindowBehavior.js';
   import {createSearchScheduler} from './searchScheduler.js';
 
   type Action = {
@@ -126,8 +126,17 @@
     setTimeout(() => searchInput?.focus(), 0);
   }
 
-  function closeWindow() {
-    Window.Close();
+  function hideWindow() {
+    Window.Hide();
+  }
+
+  function resetForOpen() {
+    const state = launcherStateForOpen();
+    activeCapability = state.activeCapability;
+    activeIndex = state.activeIndex;
+    query = state.query;
+    view = state.view;
+    setTimeout(() => searchInput?.focus(), 0);
   }
 
   function errorMessage(error: unknown) {
@@ -169,8 +178,8 @@
       event.preventDefault();
       return;
     }
-    if (shouldCloseForEscape(event.key, query, view)) {
-      closeWindow();
+    if (shouldHideForEscape(event.key, query, view)) {
+      hideWindow();
       event.preventDefault();
     }
   }
@@ -201,10 +210,14 @@
   }
 
   onMount(() => {
-    searchInput?.focus();
-    const removeLostFocusHandler = Events.On(Events.Types.Common.WindowLostFocus, closeWindow);
+    resetForOpen();
+    const removeLostFocusHandler = Events.On(Events.Types.Common.WindowLostFocus, hideWindow);
+    const removeFocusHandler = Events.On(Events.Types.Common.WindowFocus, resetForOpen);
     refreshStatus();
-    return removeLostFocusHandler;
+    return () => {
+      removeLostFocusHandler();
+      removeFocusHandler();
+    };
   });
 
   async function refreshStatus() {

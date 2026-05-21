@@ -3,8 +3,8 @@
  * @param {string} query
  * @param {'launcher' | 'capability'} view
  */
-export function shouldCloseForEscape(key, query, view) {
-  return key === 'Escape' && view === 'launcher' && query.trim() === '';
+export function shouldHideForEscape(key, query, view) {
+  return key === 'Escape' && view === 'launcher';
 }
 
 /**
@@ -13,4 +13,16 @@ export function shouldCloseForEscape(key, query, view) {
  */
 export function shouldReturnToLauncherForEscape(key, view) {
   return key === 'Escape' && view !== 'launcher';
+}
+
+/**
+ * @returns {{activeCapability: null, activeIndex: number, query: string, view: 'launcher'}}
+ */
+export function launcherStateForOpen() {
+  return {
+    activeCapability: null,
+    activeIndex: 0,
+    query: '',
+    view: 'launcher'
+  };
 }

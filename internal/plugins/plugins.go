@@ -17,7 +17,13 @@ import (
 )
 
 var idPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-_.]*$`)
-var runPluginSearch = pluginruntime.Search
+var compilePluginRuntime = pluginruntime.Compile
+var runPluginSearch = func(plugin Plugin, request raplugin.SearchRequest, api pluginruntime.HostAPI) ([]raplugin.SearchResult, error) {
+	if plugin.Runtime == nil {
+		return nil, nil
+	}
+	return plugin.Runtime.Search(request, api)
+}
 
 type Registry struct {
 	Root    string
@@ -44,9 +50,10 @@ type Plugin struct {
 	Capabilities []Capability      `json:"capabilities,omitempty"`
 	Assets       map[string][]byte `json:"-"`
 	Raw          []byte            `json:"-"`
-	Source       string            `json:"source,omitempty"`
-	Path         string            `json:"-"`
-	Disabled     bool              `json:"-"`
+	Runtime      *pluginruntime.Runtime
+	Source       string `json:"source,omitempty"`
+	Path         string `json:"-"`
+	Disabled     bool   `json:"-"`
 }
 
 type Capability struct {
@@ -209,7 +216,7 @@ func (r Registry) SearchWithContext(request SearchRequest) []Result {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			rawResults, err := runPluginSearch(plugin.Raw, raplugin.SearchRequest{
+			rawResults, err := runPluginSearch(plugin, raplugin.SearchRequest{
 				Query: trimmed,
 				Limit: request.Limit,
 			}, pluginruntime.HostAPI{
@@ -331,11 +338,17 @@ func LoadPluginFile(path string) (Plugin, error) {
 }
 
 func loadWASMBytes(raw []byte, source string, sourcePath string) (Plugin, error) {
-	bundle, err := pluginruntime.Load(raw)
+	compiled, err := compilePluginRuntime(raw)
 	if err != nil {
 		return Plugin{}, err
 	}
+	bundle, err := pluginruntime.LoadFromRuntime(raw, compiled)
+	if err != nil {
+		_ = compiled.Close()
+		return Plugin{}, err
+	}
 	if err := validateBundle(bundle); err != nil {
+		_ = compiled.Close()
 		return Plugin{}, err
 	}
 	return Plugin{
@@ -346,6 +359,7 @@ func loadWASMBytes(raw []byte, source string, sourcePath string) (Plugin, error)
 		Capabilities: capabilitiesFromBundle(bundle.Capabilities),
 		Assets:       cloneAssets(bundle.Assets),
 		Raw:          append([]byte(nil), raw...),
+		Runtime:      compiled,
 		Source:       source,
 		Path:         sourcePath,
 	}, nil

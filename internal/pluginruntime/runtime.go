@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/nzlov/ra/pkg/raplugin"
@@ -24,8 +25,10 @@ type Plugin struct {
 }
 
 type Runtime struct {
-	raw []byte
-	api HostAPI
+	r        wazero.Runtime
+	compiled wazero.CompiledModule
+	api      HostAPI
+	mu       sync.Mutex
 }
 
 type HostAPI struct {
@@ -34,7 +37,15 @@ type HostAPI struct {
 }
 
 func Load(raw []byte) (Plugin, error) {
-	rt := Runtime{raw: append([]byte(nil), raw...)}
+	rt, err := Compile(raw)
+	if err != nil {
+		return Plugin{}, err
+	}
+	defer rt.Close()
+	return LoadFromRuntime(raw, rt)
+}
+
+func LoadFromRuntime(raw []byte, rt *Runtime) (Plugin, error) {
 	manifestRaw, err := rt.readExport("ra_manifest_ptr", "ra_manifest_len")
 	if err != nil {
 		return Plugin{}, fmt.Errorf("read manifest: %w", err)
@@ -72,8 +83,52 @@ func Load(raw []byte) (Plugin, error) {
 	}, nil
 }
 
+func Compile(raw []byte) (*Runtime, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
+	defer cancel()
+	r := wazero.NewRuntimeWithConfig(ctx, wazero.NewRuntimeConfigInterpreter())
+	if _, err := wasi_snapshot_preview1.Instantiate(ctx, r); err != nil {
+		_ = r.Close(ctx)
+		return nil, err
+	}
+	rt := &Runtime{r: r}
+	if err := rt.instantiateHostAPI(ctx, r); err != nil {
+		_ = r.Close(ctx)
+		return nil, err
+	}
+	compiled, err := r.CompileModule(ctx, raw)
+	if err != nil {
+		_ = r.Close(ctx)
+		return nil, err
+	}
+	rt.compiled = compiled
+	return rt, nil
+}
+
+func (rt *Runtime) Close() error {
+	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
+	defer cancel()
+	if rt.r == nil {
+		return nil
+	}
+	return rt.r.Close(ctx)
+}
+
 func Search(raw []byte, request raplugin.SearchRequest, api ...HostAPI) ([]raplugin.SearchResult, error) {
-	rt := Runtime{raw: append([]byte(nil), raw...)}
+	rt, err := Compile(raw)
+	if err != nil {
+		return nil, err
+	}
+	defer rt.Close()
+	if len(api) > 0 {
+		rt.api = api[0]
+	}
+	return rt.Search(request)
+}
+
+func (rt *Runtime) Search(request raplugin.SearchRequest, api ...HostAPI) ([]raplugin.SearchResult, error) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
 	if len(api) > 0 {
 		rt.api = api[0]
 	}
@@ -83,11 +138,11 @@ func Search(raw []byte, request raplugin.SearchRequest, api ...HostAPI) ([]raplu
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
 	defer cancel()
-	r, mod, err := rt.instantiate(ctx)
+	_, mod, err := rt.instantiate(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer r.Close(ctx)
+	defer mod.Close(ctx)
 
 	alloc := mod.ExportedFunction("ra_alloc")
 	search := mod.ExportedFunction("ra_search")
@@ -106,7 +161,7 @@ func Search(raw []byte, request raplugin.SearchRequest, api ...HostAPI) ([]raplu
 	if err != nil {
 		return nil, err
 	}
-	raw, err = readPackedData(mod.Memory(), packedResults[0])
+	raw, err := readPackedData(mod.Memory(), packedResults[0])
 	if err != nil {
 		return nil, err
 	}
@@ -119,14 +174,14 @@ func Search(raw []byte, request raplugin.SearchRequest, api ...HostAPI) ([]raplu
 	return decoded, nil
 }
 
-func (rt Runtime) readExport(ptrName string, lenName string) ([]byte, error) {
+func (rt *Runtime) readExport(ptrName string, lenName string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
 	defer cancel()
-	r, mod, err := rt.instantiate(ctx)
+	_, mod, err := rt.instantiate(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer r.Close(ctx)
+	defer mod.Close(ctx)
 
 	ptrFn := mod.ExportedFunction(ptrName)
 	lenFn := mod.ExportedFunction(lenName)
@@ -153,22 +208,15 @@ func (rt Runtime) readExport(ptrName string, lenName string) ([]byte, error) {
 	return append([]byte(nil), raw...), nil
 }
 
-func (rt Runtime) instantiate(ctx context.Context) (wazero.Runtime, api.Module, error) {
-	r := wazero.NewRuntimeWithConfig(ctx, wazero.NewRuntimeConfigInterpreter())
-	wasi_snapshot_preview1.MustInstantiate(ctx, r)
-	if err := rt.instantiateHostAPI(ctx, r); err != nil {
-		_ = r.Close(ctx)
-		return nil, nil, err
-	}
-	mod, err := r.InstantiateWithConfig(ctx, rt.raw, wazero.NewModuleConfig().WithStartFunctions("_initialize"))
+func (rt *Runtime) instantiate(ctx context.Context) (wazero.Runtime, api.Module, error) {
+	mod, err := rt.r.InstantiateModule(ctx, rt.compiled, wazero.NewModuleConfig().WithName("").WithStartFunctions("_initialize"))
 	if err != nil {
-		_ = r.Close(ctx)
 		return nil, nil, err
 	}
-	return r, mod, nil
+	return rt.r, mod, nil
 }
 
-func (rt Runtime) instantiateHostAPI(ctx context.Context, r wazero.Runtime) error {
+func (rt *Runtime) instantiateHostAPI(ctx context.Context, r wazero.Runtime) error {
 	_, err := r.NewHostModuleBuilder("ra").
 		NewFunctionBuilder().
 		WithFunc(func(ctx context.Context, mod api.Module, ptr uint32, size uint32) uint64 {
@@ -194,7 +242,7 @@ type hostResponse struct {
 	Apps  []raplugin.App `json:"apps,omitempty"`
 }
 
-func (rt Runtime) handleHostRequest(raw []byte) hostResponse {
+func (rt *Runtime) handleHostRequest(raw []byte) hostResponse {
 	var request hostRequest
 	if err := json.Unmarshal(raw, &request); err != nil {
 		return hostResponse{OK: false, Error: "read host request: " + err.Error()}
@@ -210,7 +258,7 @@ func (rt Runtime) handleHostRequest(raw []byte) hostResponse {
 	}
 }
 
-func (rt Runtime) writeHostResponse(ctx context.Context, mod api.Module, response hostResponse) uint64 {
+func (rt *Runtime) writeHostResponse(ctx context.Context, mod api.Module, response hostResponse) uint64 {
 	raw, err := json.Marshal(response)
 	if err != nil {
 		raw = []byte(`{"ok":false,"error":"encode host response"}`)
