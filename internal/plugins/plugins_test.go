@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -195,42 +196,55 @@ func TestSearchWithContextBindsStoreHostAPIToCurrentPlugin(t *testing.T) {
 	})
 
 	var calls []string
+	validation := make(chan error, 1)
 	runPluginSearch = func(ctx context.Context, plugin Plugin, request raplugin.SearchRequest, api pluginruntime.HostAPI) ([]raplugin.SearchResult, error) {
 		if api.StoreGet == nil {
-			t.Fatal("StoreGet is nil")
+			validation <- fmt.Errorf("StoreGet is nil")
+			return nil, nil
 		}
 		if api.StoreSet == nil {
-			t.Fatal("StoreSet is nil")
+			validation <- fmt.Errorf("StoreSet is nil")
+			return nil, nil
 		}
 		if api.StoreDelete == nil {
-			t.Fatal("StoreDelete is nil")
+			validation <- fmt.Errorf("StoreDelete is nil")
+			return nil, nil
 		}
 		if api.StoreList == nil {
-			t.Fatal("StoreList is nil")
+			validation <- fmt.Errorf("StoreList is nil")
+			return nil, nil
 		}
 		value, found, err := api.StoreGet("prefs/theme")
 		if err != nil {
-			t.Fatalf("StoreGet error = %v", err)
+			validation <- fmt.Errorf("StoreGet error = %w", err)
+			return nil, nil
 		}
 		if !found {
-			t.Fatal("StoreGet found = false")
+			validation <- fmt.Errorf("StoreGet found = false")
+			return nil, nil
 		}
 		if string(value) != `{"theme":"dark"}` {
-			t.Fatalf("StoreGet value = %s", value)
+			validation <- fmt.Errorf("StoreGet value = %s", value)
+			return nil, nil
 		}
 		if err := api.StoreSet("prefs/theme", json.RawMessage(`{"theme":"light"}`)); err != nil {
-			t.Fatalf("StoreSet error = %v", err)
+			validation <- fmt.Errorf("StoreSet error = %w", err)
+			return nil, nil
 		}
 		if err := api.StoreDelete("prefs/theme"); err != nil {
-			t.Fatalf("StoreDelete error = %v", err)
+			validation <- fmt.Errorf("StoreDelete error = %w", err)
+			return nil, nil
 		}
 		list, err := api.StoreList("prefs/")
 		if err != nil {
-			t.Fatalf("StoreList error = %v", err)
+			validation <- fmt.Errorf("StoreList error = %w", err)
+			return nil, nil
 		}
 		if string(list) != `[{"key":"prefs/theme"}]` {
-			t.Fatalf("StoreList value = %s", list)
+			validation <- fmt.Errorf("StoreList value = %s", list)
+			return nil, nil
 		}
+		validation <- nil
 		return []raplugin.SearchResult{{
 			ID:    "result:" + plugin.ID,
 			Title: plugin.ID,
@@ -264,6 +278,14 @@ func TestSearchWithContextBindsStoreHostAPIToCurrentPlugin(t *testing.T) {
 		},
 	})
 
+	select {
+	case err := <-validation:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("plugin search validation did not finish")
+	}
 	if len(results) != 1 {
 		t.Fatalf("len(results) = %d, want 1: %#v", len(results), results)
 	}
